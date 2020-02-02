@@ -42,7 +42,13 @@ typedef struct {
 #define CDG_CELL_WIDTH (6)
 #define CDG_CELL_HEIGHT (12)
 
-#define SMALL_MASK_SCALER (4)
+// Each CDG frame is 1/300th of a second.
+#define CDG_FRAME_DURATION_MS (1000.0/300.0)
+
+// Forward offset.
+#define HYSTERESIS_MS (100)
+// Update screen approximately 30 FPS
+#define SCREEN_REFRESH_MS (33)
 
 // In Windows, bitmaps must have a width that is a multiple of 4 bytes.
 // We are storing two bitmaps to represent the CDG display,
@@ -61,6 +67,7 @@ typedef struct {
 #define IPC_PLAYING_FILEW 13003
 #define IPC_CB_MISC 603
 #define IPC_ISPLAYING 104
+#define IPC_GETOUTPUTTIME 105
 #define IPC_CB_MISC_STATUS 2
 
 // The CDG instruction set.
@@ -134,6 +141,12 @@ winampGeneralPurposePlugin plugin = {
 // We keep track of the last "reset" color. If we receive a MemoryPreset command for this color
 // again before anything else has been drawn, we can ignore it.
 BYTE g_nLastMemoryPresetColor = -1;
+// Handle and ID of the processing thread, as well as an event for stopping it.
+HANDLE g_hCDGProcessingThread = NULL;
+DWORD g_nCDGProcessingThreadID = 0;
+HANDLE g_hStopCDGProcessingEvent = NULL;
+HANDLE g_hSongLoadedEvent = NULL;
+
 
 // This is an export function called by winamp which returns this plugin info.
 // We wrap the code in 'extern "C"' to ensure the export isn't mangled if used in a CPP file.
@@ -152,67 +165,23 @@ void clearExistingCDGData() {
 void MemoryPreset(BYTE color, BYTE repeat) {
 	if (g_nLastMemoryPresetColor != color) {
 		memset(g_pForegroundBitmapBits, (color << 4) | color, (CDG_BITMAP_WIDTH * CDG_BITMAP_HEIGHT) / 2);
-		memset(g_pMaskBitmapBits, color == 0 ? 0 : 0xFF, (CDG_BITMAP_WIDTH * CDG_BITMAP_HEIGHT) / 8);
 		g_nLastMemoryPresetColor = color;
 	}
 }
 
 void BorderPreset(BYTE color) {
-	static byte maskLeftEdgeColorMask = 0x03;
-	static byte maskRightEdgeColorMask = 0xC0;
 	byte colorByte = (color << 4) | color;
 	// Top and bottom edge.
 	memset(g_pForegroundBitmapBits, colorByte, (CDG_BITMAP_WIDTH * CDG_CELL_HEIGHT) / 2);
 	memset(g_pForegroundBitmapBits+(((CDG_BITMAP_WIDTH * CDG_BITMAP_HEIGHT) - (CDG_BITMAP_WIDTH * CDG_CELL_HEIGHT)) / 2), colorByte, (CDG_BITMAP_WIDTH * CDG_CELL_HEIGHT) / 2);
-	byte maskColor = color == 0 ? 0 : 0xFF;
-	byte maskLeftEdgeColor = color == 0 ? 0 : 0xFC;
-	byte maskRightEdgeColor = color == 0 ? 0 : 0x3F;
-	memset(g_pMaskBitmapBits, maskColor, (CDG_BITMAP_WIDTH * CDG_CELL_HEIGHT) / 8);
-	memset(g_pMaskBitmapBits + (((CDG_BITMAP_WIDTH * CDG_BITMAP_HEIGHT) - (CDG_BITMAP_WIDTH * CDG_CELL_HEIGHT)) / 8), maskColor, (CDG_BITMAP_WIDTH * CDG_CELL_HEIGHT) / 8);
 	// Left and right edge.
 	for (int f = CDG_CELL_HEIGHT; f < CDG_CELL_HEIGHT +CDG_CANVAS_HEIGHT; ++f) {
 		memset(g_pForegroundBitmapBits + ((f * CDG_BITMAP_WIDTH) / 2), colorByte, CDG_CELL_WIDTH / 2);
 		memset(g_pForegroundBitmapBits + ((((f + 1) * CDG_BITMAP_WIDTH) / 2) - (CDG_CELL_WIDTH / 2)), colorByte, CDG_CELL_WIDTH / 2);
-		g_pMaskBitmapBits[((f * CDG_BITMAP_WIDTH) / 8)] &= maskLeftEdgeColorMask;
-		g_pMaskBitmapBits[((f * CDG_BITMAP_WIDTH) / 8)] |= maskLeftEdgeColor;
-		g_pMaskBitmapBits[((f * CDG_BITMAP_WIDTH) / 8) + ((CDG_WIDTH / 8)-1)] &= maskRightEdgeColorMask;
-		g_pMaskBitmapBits[((f * CDG_BITMAP_WIDTH) / 8) + ((CDG_WIDTH / 8)-1)] |= maskRightEdgeColor;
 	}
 }
 
-/*void DrawMaskPixel(int x, int y,byte color) {
-	int maskColumnOffset = (x / 8);
-	bool set = !!color;
-	for (int f = -1; f < 2; ++f) {
-		int maskRowOffset = ((y + f) * (CDG_BITMAP_WIDTH / 8));
-		int maskOffset = maskRowOffset + maskColumnOffset;
-		if (maskOffset >= 0) {
-			int shift = (x % 8);
-			BYTE setMaskMask = (BYTE)(0x01C0 >> shift);
-			BYTE clearMaskMask = ~clearMaskMask;
-			if(set)
-				g_pMaskBitmapBits[maskOffset] |= setMaskMask;
-			else
-				g_pMashBitmapBits[maskOffset]
-			if (x > 0 && x < CDG_WIDTH - 1) {
-				if (!shift)
-				{
-					int previousByteOffset = maskOffset - 1;
-					if (previousByteOffset >= 0)
-						g_pMaskBitmapBits[previousByteOffset] |= 0x01;
-				}
-				if (shift == 7)
-				{
-					int nextByteOffset = maskOffset + 1;
-					if (nextByteOffset < (CDG_BITMAP_WIDTH * CDG_BITMAP_HEIGHT / 8))
-						g_pMaskBitmapBits[nextByteOffset] |= 0x80;
-				}
-			}
-		}
-	}
-}*/
-
-void TileBlock(byte* pData,bool isXor) {
+bool TileBlock(byte* pData,bool isXor) {
 	// 3 byte buffer that we will use to set values in the CDG raster.
 	static byte g_blockBuffer[3];
 	byte bgColor = pData[0] & 0x0F;
@@ -248,9 +217,11 @@ void TileBlock(byte* pData,bool isXor) {
 	}
 	// Screen is no longer blank.
 	g_nLastMemoryPresetColor = -1;
+	// Return true ONLY if we wrote to non-border screen area.
+	return row < (CDG_HEIGHT_CELLS-1) && row>0 && col < (CDG_WIDTH_CELLS-1) && col>0;
 }
 
-void LoadColorTable(byte* pData, int nPaletteStartIndex) {
+bool LoadColorTable(byte* pData, int nPaletteStartIndex) {
 	RGBQUAD palette[8];
 	for (int f = 0; f < 8; ++f) {
 		byte colorByte1 = pData[f*2] & 0x3F;
@@ -268,51 +239,81 @@ void LoadColorTable(byte* pData, int nPaletteStartIndex) {
 		palette[f].rgbBlue = blue;
 		palette[f].rgbReserved = 0;
 	}
-	if (nPaletteStartIndex == 0) {
-		// Blue background.
-		*g_pBackgroundBitmapBits = RGB(palette[0].rgbRed, palette[0].rgbGreen, palette[0].rgbBlue);
-		::InvalidateRect(g_hBackgroundWindow, NULL, TRUE);
-	}
 	::SetDIBColorTable(g_hForegroundDC, nPaletteStartIndex, 8, palette);
-	::InvalidateRect(g_hForegroundWindow, NULL, TRUE);
+	if (!nPaletteStartIndex) {
+		// RGB macro, for some reason, encodes as BGR
+		*g_pBackgroundBitmapBits = RGB(palette[0].rgbBlue, palette[0].rgbGreen, palette[0].rgbRed);
+	}
+	// TODO: Return true ONLY if the background color has changed.
+	return true;
 }
 
-void ProcessCDGPacket() {
+bool Scroll(byte color,byte hScroll,byte hScrollOffset,byte vScroll,byte vScrollOffset,bool copy) {
+	// TODO
+	// Return true ONLY if we wrote to non-border screen area.
+	return true;
+}
+
+byte ProcessCDGPackets() {
+	byte result = 0;
 	if (g_nCDGPC < g_nCDGPackets) {
-		CDGPacket* pCDGPacket = g_pCDGData + g_nCDGPC;
-		if ((pCDGPacket->command & 0x3F) == 0x09) {
-			BYTE instr = pCDGPacket->instruction & 0x3F;
-			switch (instr) {
-			case CDG_INSTR_MEMORY_PRESET:
-				MemoryPreset(pCDGPacket->data[0] & 0x0F, pCDGPacket->data[1] & 0x0F);
-				break;
-			case CDG_INSTR_BORDER_PRESET:
-				BorderPreset(pCDGPacket->data[0] & 0x0F);
-				break;
-			case CDG_INSTR_TILE_BLOCK:
-				TileBlock(pCDGPacket->data, false);
-				break;
-			case CDG_INSTR_TILE_BLOCK_XOR:
-				TileBlock(pCDGPacket->data, true);
-				break;
-			case CDG_INSTR_SCROLL_PRESET:
-				break;
-			case CDG_INSTR_SCROLL_COPY:
-				break;
-			case CDG_INSTR_TRANSPARENT_COLOR:
-				break;
-			case CDG_INSTR_LOAD_COLOR_TABLE_LOW:
-				LoadColorTable(pCDGPacket->data, 0);
-				break;
-			case CDG_INSTR_LOAD_COLOR_TABLE_HIGH:
-				LoadColorTable(pCDGPacket->data, 8);
-				break;
-			default:
-				break;
+		// Get current song position in milliseconds.
+		int songPosition = ::SendMessage(plugin.hwndParent, WM_WA_IPC, 0, IPC_GETOUTPUTTIME);
+		if (songPosition != -1) {
+			songPosition += HYSTERESIS_MS;
+			int cdgFrameIndex = (int)(songPosition / CDG_FRAME_DURATION_MS);
+			// If the target frame is BEFORE the current CDGPC, the user has rewound the song.
+			// Due to the XORing nature of CDG graphics, we have to start from the start!
+			if (cdgFrameIndex < g_nCDGPC) {
+//				WCHAR g[33];
+//				wsprintf(g, L"%ld %ld", cdgFrameIndex,g_nCDGPC);
+//				::MessageBox(NULL, g, L"", MB_OK);
+				g_nCDGPC = 0;
 			}
+			while (g_nCDGPC < cdgFrameIndex && ::WaitForSingleObject(g_hStopCDGProcessingEvent, 0) == WAIT_TIMEOUT) {
+				CDGPacket* pCDGPacket = g_pCDGData + g_nCDGPC;
+				if ((pCDGPacket->command & 0x3F) == 0x09) {
+					BYTE instr = pCDGPacket->instruction & 0x3F;
+					switch (instr) {
+					case CDG_INSTR_MEMORY_PRESET:
+						MemoryPreset(pCDGPacket->data[0] & 0x0F, pCDGPacket->data[1] & 0x0F);
+						result |= 0x01;
+						break;
+					case CDG_INSTR_BORDER_PRESET:
+						BorderPreset(pCDGPacket->data[0] & 0x0F);
+						break;
+					case CDG_INSTR_TILE_BLOCK:
+						result |= (TileBlock(pCDGPacket->data, false) ? 0x01 : 0x00);
+						break;
+					case CDG_INSTR_TILE_BLOCK_XOR:
+						result |= (TileBlock(pCDGPacket->data, true) ? 0x01 : 0x00);
+						break;
+					case CDG_INSTR_SCROLL_PRESET:
+						result |= (Scroll(pCDGPacket->data[0] & 0x0F, (pCDGPacket->data[1] >> 4) & 0x03, pCDGPacket->data[1] & 0x07, (pCDGPacket->data[2] >> 4) & 0x03, pCDGPacket->data[2] & 0x07, false) ? 0x01 : 0x00);
+						break;
+					case CDG_INSTR_SCROLL_COPY:
+						result |= (Scroll(pCDGPacket->data[0] & 0x0F, (pCDGPacket->data[1] >> 4) & 0x03, pCDGPacket->data[1] & 0x07, (pCDGPacket->data[2] >> 4) & 0x03, pCDGPacket->data[2] & 0x07, true) ? 0x01 : 0x00);
+						break;
+					case CDG_INSTR_TRANSPARENT_COLOR:
+						// Not implemented.
+						break;
+					case CDG_INSTR_LOAD_COLOR_TABLE_LOW:
+						result |= (LoadColorTable(pCDGPacket->data, 0) ? 0x03 : 0x01);
+						break;
+					case CDG_INSTR_LOAD_COLOR_TABLE_HIGH:
+						result |= (LoadColorTable(pCDGPacket->data, 8) ? 0x03 : 0x01);
+						break;
+					default:
+						break;
+					}
+				}
+				g_nCDGPC++;
+			}
+			// After the loop, the PC will be 1 frame too far on. Bring it back.
+			//--g_nCDGPC;
 		}
-		g_nCDGPC++;
 	}
+	return result;
 }
 
 void DrawBackground() {
@@ -334,17 +335,27 @@ void DrawForeground() {
 }
 
 DWORD WINAPI CDGProcessor(LPVOID pParams) {
-	while (g_nCDGPC < g_nCDGPackets) {
-		ProcessCDGPacket();
-		InvalidateRect(g_hForegroundWindow, NULL, TRUE);
-		::Sleep(1);
+	HANDLE waitHandles[] = { g_hSongLoadedEvent, g_hStopCDGProcessingEvent };
+	for(;;) {
+		int waitResult=::WaitForMultipleObjects(2, waitHandles, FALSE, INFINITE);
+		if (waitResult == 1)
+			break;
+		while (::WaitForSingleObject(g_hStopCDGProcessingEvent, SCREEN_REFRESH_MS) == WAIT_TIMEOUT) {
+			byte result = ProcessCDGPackets();
+			if (result & 0x01)
+				::RedrawWindow(g_hForegroundWindow, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
+			if (result & 0x02)
+				::RedrawWindow(g_hBackgroundWindow, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
+		}
 	}
 	return 0;
 }
 
-void StartCDGThread() {
-	DWORD nThreadID=0;
-	CreateThread(NULL,0,CDGProcessor,NULL,0,&nThreadID);
+bool StartCDGProcessingThread() {
+	g_hStopCDGProcessingEvent = ::CreateEvent(NULL, TRUE, FALSE, NULL);
+	g_hSongLoadedEvent = ::CreateEvent(NULL, FALSE, FALSE, NULL);
+	g_hCDGProcessingThread=::CreateThread(NULL,0,CDGProcessor,NULL,0,&g_nCDGProcessingThreadID);
+	return !!g_hCDGProcessingThread;
 }
 
 LRESULT CALLBACK ForegroundWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
@@ -382,8 +393,6 @@ LRESULT CALLBACK ForegroundWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARA
 	case WM_NCMOUSELEAVE:
 		//SetLayeredWindowAttributes(g_hWnd, RGB(45, 167, 209), 60, LWA_COLORKEY);
 		break;
-	case WM_KEYDOWN:
-		StartCDGThread();
 	}
 	return DefWindowProc(hwnd, uMsg, wParam, lParam);
 }
@@ -442,7 +451,7 @@ ATOM RegisterBackgroundWindowClass() {
 }
 
 bool CreateForegroundWindow() {
-	DWORD styles = WS_TABSTOP | WS_THICKFRAME;
+	DWORD styles = WS_VISIBLE | WS_THICKFRAME;
 	g_hForegroundWindow = CreateWindowEx(
 		WS_EX_LAYERED | WS_EX_NOACTIVATE | WS_EX_STATICEDGE,
 		g_foregroundWindowClassName,
@@ -467,7 +476,7 @@ bool CreateForegroundWindow() {
 }
 
 bool CreateBackgroundWindow() {
-	DWORD styles = WS_TABSTOP;
+	DWORD styles = WS_VISIBLE;
 	g_hBackgroundWindow = CreateWindowEx(
 		WS_EX_LAYERED | WS_EX_NOACTIVATE,
 		g_backgroundWindowClassName,
@@ -635,7 +644,6 @@ void readCDGData(const WCHAR *pFileBeingPlayed) {
 									g_pCDGData = (CDGPacket*)malloc((size_t)g_nCDGPackets * sizeof(CDGPacket));
 									zip_fread(pCDGFile, g_pCDGData, fileStat.size);
 									zip_fclose(pCDGFile);
-									g_nCDGPC = 0;
 									break;
 								}
 							}
@@ -666,15 +674,9 @@ void readCDGData(const WCHAR *pFileBeingPlayed) {
 			g_pCDGData = (CDGPacket *)malloc(g_nCDGPackets*sizeof(CDGPacket));
 			if (g_pCDGData)
 				fread(g_pCDGData, sizeof(CDGPacket), g_nCDGPackets, pFile);
-			g_nCDGPC = 0;
 			fclose(pFile);
 		}
 	}
-}
-
-void ShowCDGDisplay(bool show) {
-	::ShowWindow(g_hBackgroundWindow, show ? SW_SHOW : SW_HIDE);
-	::ShowWindow(g_hForegroundWindow, show ? SW_SHOW : SW_HIDE);
 }
 
 LRESULT CALLBACK CdgProWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
@@ -686,13 +688,15 @@ LRESULT CALLBACK CdgProWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lPara
 					const WCHAR *fileBeingPlayed = (const WCHAR *)wParam;
 					clearExistingCDGData();
 					readCDGData(fileBeingPlayed);
-					if (!g_pCDGData)
-						ShowCDGDisplay(false);
+					if (g_pCDGData) {
+						g_nCDGPC = 0;
+						::SetEvent(g_hSongLoadedEvent);
+					}
 					break;
 				}
 				case IPC_CB_MISC:
 					if (wParam == IPC_CB_MISC_STATUS) {
-						ShowCDGDisplay(g_pCDGData && SendMessage(plugin.hwndParent, WM_WA_IPC, 0, IPC_ISPLAYING) != 0);
+						//ShowCDGDisplay(g_pCDGData && ::SendMessage(plugin.hwndParent, WM_WA_IPC, 0, IPC_ISPLAYING) != 0);
 					}
 					break;
 			}
@@ -716,22 +720,21 @@ int init() {
 						if (CreateBackgroundDC())
 							if (CreateForegroundDC())
 								if (CreateMaskDC())
-									if (CreateMaskedForegroundDC()) {
-									}
+									if (CreateMaskedForegroundDC())
+										if(StartCDGProcessingThread()){
+										}
 
 	g_pOriginalWndProc = (WNDPROC)SetWindowLong(plugin.hwndParent, GWL_WNDPROC, (LONG)CdgProWndProc);
 	return 0;
 }
 
 void config() {
-	//A basic messagebox that tells you the 'config' event has been triggered.
-	//You can change this later to do whatever you want (including nothing)
 }
 
 void quit() {
-	//A basic messagebox that tells you the 'quit' event has been triggered.
-	//If everything works you should see this message when you quit Winamp once your plugin has been installed.
-	//You can change this later to do whatever you want (including nothing)
+	::SetEvent(g_hStopCDGProcessingEvent);
+	::WaitForSingleObject(g_hCDGProcessingThread, INFINITE);
+
 	SetWindowLong(plugin.hwndParent, GWL_WNDPROC, (LONG)g_pOriginalWndProc);
 
 	clearExistingCDGData();
@@ -771,6 +774,9 @@ void quit() {
 
 	if (g_hTransparentBrush)
 		::DeleteObject(g_hTransparentBrush);
+
+	::CloseHandle(g_hStopCDGProcessingEvent);
+	::CloseHandle(g_hSongLoadedEvent);
 
 	UnregisterClass(g_foregroundWindowClassName, plugin.hDllInstance);
 	UnregisterClass(g_backgroundWindowClassName, plugin.hDllInstance);
