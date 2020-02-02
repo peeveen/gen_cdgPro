@@ -144,9 +144,11 @@ BYTE g_nLastMemoryPresetColor = -1;
 // Handle and ID of the processing thread, as well as an event for stopping it.
 HANDLE g_hCDGProcessingThread = NULL;
 DWORD g_nCDGProcessingThreadID = 0;
+// Cross thread communication events
 HANDLE g_hStopCDGProcessingEvent = NULL;
+HANDLE g_hStoppedCDGProcessingEvent = NULL;
+HANDLE g_hStopCDGThreadEvent = NULL;
 HANDLE g_hSongLoadedEvent = NULL;
-
 
 // This is an export function called by winamp which returns this plugin info.
 // We wrap the code in 'extern "C"' to ensure the export isn't mangled if used in a CPP file.
@@ -256,6 +258,7 @@ bool Scroll(byte color,byte hScroll,byte hScrollOffset,byte vScroll,byte vScroll
 
 byte ProcessCDGPackets() {
 	byte result = 0;
+	HANDLE waitHandles[] = { g_hStopCDGProcessingEvent, g_hStopCDGThreadEvent };
 	if (g_nCDGPC < g_nCDGPackets) {
 		// Get current song position in milliseconds.
 		int songPosition = ::SendMessage(plugin.hwndParent, WM_WA_IPC, 0, IPC_GETOUTPUTTIME);
@@ -264,53 +267,52 @@ byte ProcessCDGPackets() {
 			int cdgFrameIndex = (int)(songPosition / CDG_FRAME_DURATION_MS);
 			// If the target frame is BEFORE the current CDGPC, the user has rewound the song.
 			// Due to the XORing nature of CDG graphics, we have to start from the start!
-			if (cdgFrameIndex < g_nCDGPC) {
-//				WCHAR g[33];
-//				wsprintf(g, L"%ld %ld", cdgFrameIndex,g_nCDGPC);
-//				::MessageBox(NULL, g, L"", MB_OK);
+			if (cdgFrameIndex < g_nCDGPC)
 				g_nCDGPC = 0;
-			}
-			while (g_nCDGPC < cdgFrameIndex && ::WaitForSingleObject(g_hStopCDGProcessingEvent, 0) == WAIT_TIMEOUT) {
-				CDGPacket* pCDGPacket = g_pCDGData + g_nCDGPC;
-				if ((pCDGPacket->command & 0x3F) == 0x09) {
-					BYTE instr = pCDGPacket->instruction & 0x3F;
-					switch (instr) {
-					case CDG_INSTR_MEMORY_PRESET:
-						MemoryPreset(pCDGPacket->data[0] & 0x0F, pCDGPacket->data[1] & 0x0F);
-						result |= 0x01;
-						break;
-					case CDG_INSTR_BORDER_PRESET:
-						BorderPreset(pCDGPacket->data[0] & 0x0F);
-						break;
-					case CDG_INSTR_TILE_BLOCK:
-						result |= (TileBlock(pCDGPacket->data, false) ? 0x01 : 0x00);
-						break;
-					case CDG_INSTR_TILE_BLOCK_XOR:
-						result |= (TileBlock(pCDGPacket->data, true) ? 0x01 : 0x00);
-						break;
-					case CDG_INSTR_SCROLL_PRESET:
-						result |= (Scroll(pCDGPacket->data[0] & 0x0F, (pCDGPacket->data[1] >> 4) & 0x03, pCDGPacket->data[1] & 0x07, (pCDGPacket->data[2] >> 4) & 0x03, pCDGPacket->data[2] & 0x07, false) ? 0x01 : 0x00);
-						break;
-					case CDG_INSTR_SCROLL_COPY:
-						result |= (Scroll(pCDGPacket->data[0] & 0x0F, (pCDGPacket->data[1] >> 4) & 0x03, pCDGPacket->data[1] & 0x07, (pCDGPacket->data[2] >> 4) & 0x03, pCDGPacket->data[2] & 0x07, true) ? 0x01 : 0x00);
-						break;
-					case CDG_INSTR_TRANSPARENT_COLOR:
-						// Not implemented.
-						break;
-					case CDG_INSTR_LOAD_COLOR_TABLE_LOW:
-						result |= (LoadColorTable(pCDGPacket->data, 0) ? 0x03 : 0x01);
-						break;
-					case CDG_INSTR_LOAD_COLOR_TABLE_HIGH:
-						result |= (LoadColorTable(pCDGPacket->data, 8) ? 0x03 : 0x01);
-						break;
-					default:
-						break;
+			for (; g_nCDGPC < cdgFrameIndex;) {
+				int waitResult=::WaitForMultipleObjects(2, waitHandles, FALSE, 0);
+				if (waitResult == WAIT_TIMEOUT) {
+					CDGPacket* pCDGPacket = g_pCDGData + g_nCDGPC;
+					if ((pCDGPacket->command & 0x3F) == 0x09) {
+						BYTE instr = pCDGPacket->instruction & 0x3F;
+						switch (instr) {
+						case CDG_INSTR_MEMORY_PRESET:
+							MemoryPreset(pCDGPacket->data[0] & 0x0F, pCDGPacket->data[1] & 0x0F);
+							result |= 0x01;
+							break;
+						case CDG_INSTR_BORDER_PRESET:
+							BorderPreset(pCDGPacket->data[0] & 0x0F);
+							break;
+						case CDG_INSTR_TILE_BLOCK:
+							result |= (TileBlock(pCDGPacket->data, false) ? 0x01 : 0x00);
+							break;
+						case CDG_INSTR_TILE_BLOCK_XOR:
+							result |= (TileBlock(pCDGPacket->data, true) ? 0x01 : 0x00);
+							break;
+						case CDG_INSTR_SCROLL_PRESET:
+							result |= (Scroll(pCDGPacket->data[0] & 0x0F, (pCDGPacket->data[1] >> 4) & 0x03, pCDGPacket->data[1] & 0x07, (pCDGPacket->data[2] >> 4) & 0x03, pCDGPacket->data[2] & 0x07, false) ? 0x01 : 0x00);
+							break;
+						case CDG_INSTR_SCROLL_COPY:
+							result |= (Scroll(pCDGPacket->data[0] & 0x0F, (pCDGPacket->data[1] >> 4) & 0x03, pCDGPacket->data[1] & 0x07, (pCDGPacket->data[2] >> 4) & 0x03, pCDGPacket->data[2] & 0x07, true) ? 0x01 : 0x00);
+							break;
+						case CDG_INSTR_TRANSPARENT_COLOR:
+							// Not implemented.
+							break;
+						case CDG_INSTR_LOAD_COLOR_TABLE_LOW:
+							result |= (LoadColorTable(pCDGPacket->data, 0) ? 0x03 : 0x01);
+							break;
+						case CDG_INSTR_LOAD_COLOR_TABLE_HIGH:
+							result |= (LoadColorTable(pCDGPacket->data, 8) ? 0x03 : 0x01);
+							break;
+						default:
+							break;
+						}
 					}
+					g_nCDGPC++;
 				}
-				g_nCDGPC++;
+				else
+					break;
 			}
-			// After the loop, the PC will be 1 frame too far on. Bring it back.
-			//--g_nCDGPC;
 		}
 	}
 	return result;
@@ -335,26 +337,37 @@ void DrawForeground() {
 }
 
 DWORD WINAPI CDGProcessor(LPVOID pParams) {
-	HANDLE waitHandles[] = { g_hSongLoadedEvent, g_hStopCDGProcessingEvent };
+	HANDLE waitHandles[] = { g_hStopCDGProcessingEvent, g_hStopCDGThreadEvent,g_hSongLoadedEvent };
 	for(;;) {
-		int waitResult=::WaitForMultipleObjects(2, waitHandles, FALSE, INFINITE);
-		if (waitResult == 1)
+		int waitResult=::WaitForMultipleObjects(2, waitHandles+1, FALSE, INFINITE);
+		if (waitResult == 0){
 			break;
-		while (::WaitForSingleObject(g_hStopCDGProcessingEvent, SCREEN_REFRESH_MS) == WAIT_TIMEOUT) {
-			byte result = ProcessCDGPackets();
-			if (result & 0x01)
-				::RedrawWindow(g_hForegroundWindow, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
-			if (result & 0x02)
-				::RedrawWindow(g_hBackgroundWindow, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
 		}
+		for (;;) {
+			waitResult = ::WaitForMultipleObjects(2, waitHandles, FALSE, SCREEN_REFRESH_MS);
+			if (waitResult == 0)
+				break;
+			if (waitResult == 1)
+				return 0;
+			if(waitResult==WAIT_TIMEOUT) {
+				byte result = ProcessCDGPackets();
+				if (result & 0x01)
+					::RedrawWindow(g_hForegroundWindow, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
+				if (result & 0x02)
+					::RedrawWindow(g_hBackgroundWindow, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
+			}
+		}
+		::SetEvent(g_hStoppedCDGProcessingEvent);
 	}
 	return 0;
 }
 
 bool StartCDGProcessingThread() {
 	g_hStopCDGProcessingEvent = ::CreateEvent(NULL, TRUE, FALSE, NULL);
+	g_hStoppedCDGProcessingEvent = ::CreateEvent(NULL, FALSE, TRUE, NULL);
+	g_hStopCDGThreadEvent = ::CreateEvent(NULL, TRUE, FALSE, NULL);
 	g_hSongLoadedEvent = ::CreateEvent(NULL, FALSE, FALSE, NULL);
-	g_hCDGProcessingThread=::CreateThread(NULL,0,CDGProcessor,NULL,0,&g_nCDGProcessingThreadID);
+	g_hCDGProcessingThread = ::CreateThread(NULL, 0, CDGProcessor, NULL, 0, &g_nCDGProcessingThreadID);
 	return !!g_hCDGProcessingThread;
 }
 
@@ -608,18 +621,20 @@ void readCDGData(const WCHAR *pFileBeingPlayed) {
 
 	wcscpy_s(pathBuffer, pFileBeingPlayed);
 	pathBuffer[MAX_PATH] = '\0';
+	int pathLength = wcslen(pathBuffer);
 	_wcslwr_s(pathBuffer);
-	if (wcsstr(pathBuffer, L"zip://")) {
-		// Format of string will be zip://somepathtoazipfile,n
+	const WCHAR *zipPrefixLocation = wcsstr(pathBuffer, L"zip://");
+	bool isZipFile = !wcscmp(pathBuffer + (pathLength - 4), L".zip");
+	if (zipPrefixLocation || isZipFile) {
+		// Format of string might be zip://somepathtoazipfile,n
 		// n will be the indexed entry in the zip file that is being played.
 		// First of all, get rid of the zip:// bit.
-		wcscpy_s(pathBuffer, pathBuffer + 6);
-		// Now we need to get rid of the ,n bit
-		WCHAR *pComma = wcsrchr(pathBuffer, ',');
-		int zipIndex = -1;
-		if (pComma) {
-			zipIndex = _wtoi(pComma + 1);
-			*pComma = '\0';
+		if (zipPrefixLocation) {
+			wcscpy_s(pathBuffer, pathBuffer + 6);
+			// Now we need to get rid of the ,n bit
+			WCHAR* pComma = wcsrchr(pathBuffer, ',');
+			if (pComma - pathBuffer)
+				*pComma = '\0';
 		}
 		// OK, we now have the path to the zip file. We can go ahead and read it, looking for the
 		// CDG file.
@@ -679,18 +694,34 @@ void readCDGData(const WCHAR *pFileBeingPlayed) {
 	}
 }
 
+DWORD WINAPI StartSongThread(LPVOID pParams) {
+	::SetEvent(g_hStopCDGProcessingEvent);
+	::WaitForSingleObject(g_hStoppedCDGProcessingEvent, INFINITE);
+	::ResetEvent(g_hStopCDGProcessingEvent);
+	const WCHAR* fileBeingPlayed = (const WCHAR*)pParams;
+	clearExistingCDGData();
+	readCDGData(fileBeingPlayed);
+	free(pParams);
+	if (g_pCDGData) {
+		g_nCDGPC = 0;
+		::SetEvent(g_hSongLoadedEvent);
+	}
+	return 0;
+}
+
 LRESULT CALLBACK CdgProWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
+	DWORD nStartSongThreadID;
 	switch (uMsg) {
 		case WM_WA_IPC:
 			switch (lParam) {
 				case IPC_PLAYING_FILEW: {
-					const WCHAR *fileBeingPlayed = (const WCHAR *)wParam;
-					clearExistingCDGData();
-					readCDGData(fileBeingPlayed);
-					if (g_pCDGData) {
-						g_nCDGPC = 0;
-						::SetEvent(g_hSongLoadedEvent);
+					const WCHAR *pszSongTitle = (const WCHAR *)wParam;
+					int nStrLen = (wcslen(pszSongTitle) + 1);
+					WCHAR *pszSongTitleCopy = (WCHAR *)malloc(sizeof(WCHAR) * nStrLen);
+					if (pszSongTitleCopy) {
+						wcscpy_s(pszSongTitleCopy, nStrLen, pszSongTitle);
+						::CreateThread(NULL, 0, StartSongThread, (LPVOID)pszSongTitleCopy, 0, &nStartSongThreadID);
 					}
 					break;
 				}
@@ -733,6 +764,7 @@ void config() {
 
 void quit() {
 	::SetEvent(g_hStopCDGProcessingEvent);
+	::SetEvent(g_hStopCDGThreadEvent);
 	::WaitForSingleObject(g_hCDGProcessingThread, INFINITE);
 
 	SetWindowLong(plugin.hwndParent, GWL_WNDPROC, (LONG)g_pOriginalWndProc);
@@ -776,6 +808,7 @@ void quit() {
 		::DeleteObject(g_hTransparentBrush);
 
 	::CloseHandle(g_hStopCDGProcessingEvent);
+	::CloseHandle(g_hStopCDGThreadEvent);
 	::CloseHandle(g_hSongLoadedEvent);
 
 	UnregisterClass(g_foregroundWindowClassName, plugin.hDllInstance);
