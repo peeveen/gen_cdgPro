@@ -9,6 +9,7 @@
 #pragma comment (lib,"Gdiplus.lib")
 using namespace Gdiplus;
 #include "zip.h"
+#include "resource.h"
 
 // Plugin version (don't touch this!)
 #define GPPHDR_VER 0x10
@@ -26,8 +27,18 @@ using namespace Gdiplus;
 int g_nBackgroundOpacity = 127;
 bool g_bDrawOutline = true;
 bool g_bShowBorder = false;
+// We periodically ask WinAmp how many milliseconds it has played of a song. This works fine
+// but as time goes on, it starts to get it wrong, falling behind by a tiny amount each time.
+// To keep the display in sync, we will multiple whatever WinAmp tells us by this amount.
+double g_nTimeScaler = 1.00466;
 // How to determine the transparent background color?
-int g_nBackgroundDetectionMode = BDM_TOPLEFTPIXEL;
+int g_nBackgroundDetectionMode = BDM_TOPRIGHTPIXEL;
+// Default background colour when there is no song playing.
+int g_nDefaultBackgroundColor = 0x0000ff;
+// Smoothing of the jaggy CDG graphics? Not yet implemented.
+bool g_bEnableSmoothing = true;
+// Logo to display when there is no song playing.
+const WCHAR* g_pszLogoPath = L"C:\\Users\\steven.frew\\Desktop\\smallLogo.png";
 
 // main structure with plugin information, version, name...
 typedef struct {
@@ -65,7 +76,10 @@ typedef struct {
 // Each CDG frame is 1/300th of a second.
 #define CDG_FRAME_DURATION_MS (1000.0/300.0)
 
-// Forward offset.
+// The CDG graphics files are often slightly ahead of the music, probably due to the techniques
+// used when ripping the data, or possibly because the disc manufacturers assume a certain amount of
+// buffering in the disc player audio hardware and no such delay exists when we play the data
+// directly in software. Anyway, this is the amount of time that we will add to account for that.
 #define HYSTERESIS_MS (100)
 // Rewind tolerance. We periodically query WinAmp to find out the current position (in milliseconds)
 // of the audio track. For some reason, usually very near the start of a track, WinAmp will report
@@ -178,11 +192,18 @@ HANDLE g_hSongLoadedEvent = NULL;
 // Canvas pixel offsets for scrolling
 int g_nCanvasXOffset = 0;
 int g_nCanvasYOffset = 0;
-// The palettes ... logical is the one defined by the CDG data, effective is the one we're using.
+// The palettes ... logical is the one defined by the CDG data, effective is the one we're using
+// that has been pochled to ensure there are no duplicate colours.
 RGBQUAD g_logicalPalette[16];
 RGBQUAD g_effectivePalette[16];
-
-
+// DLL icon
+HICON g_hIcon = NULL;
+// Logo image
+Image* g_pLogoImage = NULL;
+SIZE g_logoSize;
+bool g_bShowLogo = true;
+// GDI+ token
+ULONG_PTR g_gdiPlusToken;
 
 // This is an export function called by winamp which returns this plugin info.
 // We wrap the code in 'extern "C"' to ensure the export isn't mangled if used in a CPP file.
@@ -211,39 +232,22 @@ void SetBackgroundColorFromPixel(int offset, bool highNibble) {
 	SetBackgroundColorIndex(color);
 }
 
-void SetBackgroundColorFromTopLeftPixel() {
-	SetBackgroundColorFromPixel(TOP_LEFT_PIXEL_OFFSET, true);
-}
-
-void SetBackgroundColorFromTopRightPixel() {
-	SetBackgroundColorFromPixel(TOP_RIGHT_PIXEL_OFFSET, false);
-}
-
-void SetBackgroundColorFromBottomLeftPixel() {
-	SetBackgroundColorFromPixel(BOTTOM_LEFT_PIXEL_OFFSET, true);
-}
-
-void SetBackgroundColorFromBottomRightPixel() {
-	SetBackgroundColorFromPixel(BOTTOM_RIGHT_PIXEL_OFFSET, false);
-}
-
 byte MemoryPreset(BYTE color, BYTE repeat) {
-	if (g_nLastMemoryPresetColor != color) {
-		memset(g_pForegroundBitmapBits, (color << 4) | color, (CDG_BITMAP_WIDTH * CDG_BITMAP_HEIGHT) / 2);
-		g_nLastMemoryPresetColor = color;
-		switch (g_nBackgroundDetectionMode) {
-		case BDM_TOPLEFTPIXEL:
-		case BDM_TOPRIGHTPIXEL:
-		case BDM_BOTTOMLEFTPIXEL:
-		case BDM_BOTTOMRIGHTPIXEL:
-			// All pixels will be the same value at this point, so call any function.
-			SetBackgroundColorFromTopLeftPixel();
-			return 0x03;
-		default:
-			break;
-		}
+	if (g_nLastMemoryPresetColor == color)
+		return 0x00;
+	memset(g_pForegroundBitmapBits, (color << 4) | color, (CDG_BITMAP_WIDTH * CDG_BITMAP_HEIGHT) / 2);
+	g_nLastMemoryPresetColor = color;
+	switch (g_nBackgroundDetectionMode) {
+	case BDM_TOPLEFTPIXEL:
+	case BDM_TOPRIGHTPIXEL:
+	case BDM_BOTTOMLEFTPIXEL:
+	case BDM_BOTTOMRIGHTPIXEL:
+		// All pixels will be the same value at this point, so use any corner.
+		SetBackgroundColorFromPixel(TOP_LEFT_PIXEL_OFFSET, true);
+		return 0x03;
+	default:
+		return 0x01;
 	}
-	return 0x01;
 }
 
 void BorderPreset(BYTE color) {
@@ -256,6 +260,22 @@ void BorderPreset(BYTE color) {
 		memset(g_pForegroundBitmapBits + ((f * CDG_BITMAP_WIDTH) / 2), colorByte, CDG_CELL_WIDTH / 2);
 		memset(g_pForegroundBitmapBits + ((f * CDG_BITMAP_WIDTH) / 2) + ((CDG_WIDTH - CDG_CELL_WIDTH) / 2), colorByte, CDG_CELL_WIDTH / 2);
 	}
+	// Screen is no longer "blank".
+	g_nLastMemoryPresetColor = -1;
+}
+
+bool CheckPixelColorBackgroundChange(bool topLeftPixelSet, bool topRightPixelSet, bool bottomLeftPixelSet, bool bottomRightPixelSet) {
+	if (g_nBackgroundDetectionMode == BDM_TOPLEFTPIXEL && topLeftPixelSet)
+		SetBackgroundColorFromPixel(TOP_LEFT_PIXEL_OFFSET, true);
+	else if (g_nBackgroundDetectionMode == BDM_TOPRIGHTPIXEL && topRightPixelSet)
+		SetBackgroundColorFromPixel(TOP_RIGHT_PIXEL_OFFSET, false);
+	else if (g_nBackgroundDetectionMode == BDM_BOTTOMLEFTPIXEL && bottomLeftPixelSet)
+		SetBackgroundColorFromPixel(BOTTOM_LEFT_PIXEL_OFFSET, true);
+	else if (g_nBackgroundDetectionMode == BDM_BOTTOMRIGHTPIXEL && bottomRightPixelSet)
+		SetBackgroundColorFromPixel(BOTTOM_RIGHT_PIXEL_OFFSET, false);
+	else
+		return false;
+	return true;
 }
 
 byte TileBlock(byte* pData, bool isXor) {
@@ -263,7 +283,7 @@ byte TileBlock(byte* pData, bool isXor) {
 	static byte g_blockBuffer[3];
 	byte bgColor = pData[0] & 0x0F;
 	byte fgColor = pData[1] & 0x0F;
-	// Python CDG parser suggests this bit means "ignore this command"?
+	// Python CDG parser code suggests this bit means "ignore this command"?
 	//if (pData[1] & 0x20)
 	//	return;
 	byte row = pData[2] & 0x3F;
@@ -295,15 +315,7 @@ byte TileBlock(byte* pData, bool isXor) {
 	// Did we write to the non-border screen area?
 	byte result = (row < (CDG_HEIGHT_CELLS - 1) && row>0 && col < (CDG_WIDTH_CELLS - 1) && col>0) ? 0x03 : 0x02;
 	// Also need to know if the background needs refreshed.
-	if (g_nBackgroundDetectionMode == BDM_TOPLEFTPIXEL && col == 1 && row == 1)
-		SetBackgroundColorFromTopLeftPixel();
-	else if (g_nBackgroundDetectionMode == BDM_TOPRIGHTPIXEL && col == CDG_WIDTH_CELLS - 2 && row == 1)
-		SetBackgroundColorFromTopRightPixel();
-	else if (g_nBackgroundDetectionMode == BDM_BOTTOMLEFTPIXEL && col == 1 && row == CDG_HEIGHT_CELLS - 2)
-		SetBackgroundColorFromBottomLeftPixel();
-	else if (g_nBackgroundDetectionMode == BDM_BOTTOMRIGHTPIXEL && col == CDG_WIDTH_CELLS - 2 && row == CDG_HEIGHT_CELLS - 2)
-		SetBackgroundColorFromBottomRightPixel();
-	else
+	if (!CheckPixelColorBackgroundChange(col == 1 && row == 1, col == CDG_WIDTH_CELLS - 2 && row == 1, col == 1 && row == CDG_HEIGHT_CELLS - 2, col == CDG_WIDTH_CELLS - 2 && row == CDG_HEIGHT_CELLS - 2))
 		result &= 0x01;
 	// Screen is no longer blank.
 	g_nLastMemoryPresetColor = -1;
@@ -383,18 +395,9 @@ byte Scroll(byte color, byte hScroll, byte hScrollOffset, byte vScroll, byte vSc
 		else if (nHScrollPixels < 0)
 			::BitBlt(g_hForegroundDC, CDG_WIDTH + nHScrollPixels, nVScrollPixels, -nHScrollPixels, CDG_BITMAP_HEIGHT, g_hScrollBufferDC, 0, 0, SRCCOPY);
 	}
-	byte result = 0x03;
-	if (g_nBackgroundDetectionMode == BDM_TOPLEFTPIXEL)
-		SetBackgroundColorFromTopLeftPixel();
-	else if (g_nBackgroundDetectionMode == BDM_TOPRIGHTPIXEL)
-		SetBackgroundColorFromTopRightPixel();
-	else if (g_nBackgroundDetectionMode == BDM_BOTTOMLEFTPIXEL)
-		SetBackgroundColorFromBottomLeftPixel();
-	else if (g_nBackgroundDetectionMode == BDM_BOTTOMRIGHTPIXEL)
-		SetBackgroundColorFromBottomRightPixel();
-	else
-		result = 0x01;
-	return result;
+	else if (color != g_nLastMemoryPresetColor)
+		g_nLastMemoryPresetColor = -1;
+	return CheckPixelColorBackgroundChange(true, true, true, true) ? 0x03 : 0x01;
 }
 
 byte ProcessCDGPackets() {
@@ -404,8 +407,12 @@ byte ProcessCDGPackets() {
 		// Get current song position in milliseconds (see comment about rewind tolerance).
 		int songPosition = ::SendMessage(plugin.hwndParent, WM_WA_IPC, 0, IPC_GETOUTPUTTIME);
 		if (songPosition != -1) {
-			songPosition += HYSTERESIS_MS;
+			// Account for WinAmp timing drift bug (see comment about time scaler)
+			// and general lag (see comment about hysteresis).
+			songPosition = (int)(songPosition * g_nTimeScaler) + HYSTERESIS_MS;
 			int cdgFrameIndex = (int)(songPosition / CDG_FRAME_DURATION_MS);
+			if (cdgFrameIndex > g_nCDGPackets)
+				cdgFrameIndex = g_nCDGPackets;
 			// If the target frame is BEFORE the current CDGPC, the user has
 			// (possibly) rewound the song.
 			// Due to the XORing nature of CDG graphics, we have to start from the start
@@ -476,6 +483,14 @@ void DrawForeground() {
 		::StretchBlt(g_hForegroundWindowDC, 0, 0, r.right - r.left, r.bottom - r.top, g_hMaskedForegroundDC, g_nCanvasXOffset, g_nCanvasYOffset, CDG_WIDTH, CDG_HEIGHT, SRCCOPY);
 	else
 		::StretchBlt(g_hForegroundWindowDC, 0, 0, r.right - r.left, r.bottom - r.top, g_hMaskedForegroundDC, CDG_CANVAS_X + g_nCanvasXOffset, CDG_CANVAS_Y + g_nCanvasYOffset, CDG_CANVAS_WIDTH, CDG_CANVAS_HEIGHT, SRCCOPY);
+	if (g_pLogoImage && g_bShowLogo) {
+		RECT r;
+		::GetClientRect(g_hForegroundWindow, &r);
+		int windowWidth = r.right - r.left;
+		int windowHeight = r.bottom - r.top;
+		Graphics g(g_hForegroundWindowDC);
+		g.DrawImage(g_pLogoImage, (windowWidth - g_logoSize.cx) / 2, (windowHeight - g_logoSize.cy) / 2, g_logoSize.cx, g_logoSize.cy);
+	}
 }
 
 DWORD WINAPI CDGProcessor(LPVOID pParams) {
@@ -525,18 +540,18 @@ LRESULT CALLBACK ForegroundWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARA
 	}
 	case WM_WINDOWPOSCHANGED:
 	case WM_SHOWWINDOW:
-		::SetWindowPos(g_hBackgroundWindow, hwnd, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+		::SetWindowPos(g_hBackgroundWindow, hwnd, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
 		break;
 	case WM_MOVE: {
 		int x = (int)(short)LOWORD(lParam);
 		int y = (int)(short)HIWORD(lParam);
-		::SetWindowPos(g_hBackgroundWindow, hwnd, x, y, 0, 0, SWP_NOSIZE);
+		::SetWindowPos(g_hBackgroundWindow, hwnd, x, y, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE);
 		break;
 	}
 	case WM_SIZE: {
 		int w = (int)(short)LOWORD(lParam);
 		int h = (int)(short)HIWORD(lParam);
-		::SetWindowPos(g_hBackgroundWindow, hwnd, 0, 0, w, h, SWP_NOMOVE);
+		::SetWindowPos(g_hBackgroundWindow, hwnd, 0, 0, w, h, SWP_NOMOVE | SWP_NOACTIVATE);
 		break;
 	}
 	case WM_PAINT:
@@ -555,47 +570,13 @@ LRESULT CALLBACK BackgroundWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARA
 		break;
 	case WM_WINDOWPOSCHANGED:
 	case WM_SHOWWINDOW:
-		::SetWindowPos(hwnd, g_hForegroundWindow, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+		::SetWindowPos(hwnd, g_hForegroundWindow, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
 		break;
 	}
 	return DefWindowProc(hwnd, uMsg, wParam, lParam);
 }
 
-ATOM RegisterForegroundWindowClass() {
-	WNDCLASSEX wndClass;
-	wndClass.cbSize = sizeof(WNDCLASSEX);
-	wndClass.style = CS_PARENTDC | CS_HREDRAW | CS_VREDRAW;
-	wndClass.lpfnWndProc = (WNDPROC)ForegroundWindowProc;
-	wndClass.cbClsExtra = 0;
-	wndClass.cbWndExtra = 0;
-	wndClass.hInstance = plugin.hDllInstance;
-	wndClass.hIcon = NULL;
-	wndClass.hCursor = LoadCursor(NULL, (LPTSTR)IDC_ARROW);
-	wndClass.hbrBackground = NULL;
-	wndClass.lpszMenuName = NULL;
-	wndClass.lpszClassName = g_foregroundWindowClassName;
-	wndClass.hIconSm = NULL;
-	return RegisterClassEx(&wndClass);
-}
-
-ATOM RegisterBackgroundWindowClass() {
-	WNDCLASSEX wndClass;
-	wndClass.cbSize = sizeof(WNDCLASSEX);
-	wndClass.style = CS_PARENTDC | CS_HREDRAW | CS_VREDRAW;
-	wndClass.lpfnWndProc = (WNDPROC)BackgroundWindowProc;
-	wndClass.cbClsExtra = 0;
-	wndClass.cbWndExtra = 0;
-	wndClass.hInstance = plugin.hDllInstance;
-	wndClass.hIcon = NULL;
-	wndClass.hCursor = LoadCursor(NULL, (LPTSTR)IDC_ARROW);
-	wndClass.hbrBackground = NULL;
-	wndClass.lpszMenuName = NULL;
-	wndClass.lpszClassName = g_backgroundWindowClassName;
-	wndClass.hIconSm = NULL;
-	return RegisterClassEx(&wndClass);
-}
-
-/*ATOM RegisterWindowClass(const WCHAR *pszClassName, WNDPROC wndProc) {
+ATOM RegisterWindowClass(const WCHAR* pszClassName, WNDPROC wndProc) {
 	WNDCLASSEX wndClass;
 	wndClass.cbSize = sizeof(WNDCLASSEX);
 	wndClass.style = CS_PARENTDC | CS_HREDRAW | CS_VREDRAW;
@@ -603,29 +584,29 @@ ATOM RegisterBackgroundWindowClass() {
 	wndClass.cbClsExtra = 0;
 	wndClass.cbWndExtra = 0;
 	wndClass.hInstance = plugin.hDllInstance;
-	wndClass.hIcon = NULL;
+	wndClass.hIcon = g_hIcon;
 	wndClass.hCursor = LoadCursor(NULL, (LPTSTR)IDC_ARROW);
 	wndClass.hbrBackground = NULL;
 	wndClass.lpszMenuName = NULL;
 	wndClass.lpszClassName = pszClassName;
-	wndClass.hIconSm = NULL;
-	return RegisterClassEx(&wndClass);
+	wndClass.hIconSm = g_hIcon;
+	return ::RegisterClassEx(&wndClass);
+}
+
+ATOM RegisterForegroundWindowClass() {
+	return RegisterWindowClass(g_foregroundWindowClassName, (WNDPROC)ForegroundWindowProc);
 }
 
 ATOM RegisterBackgroundWindowClass() {
 	return RegisterWindowClass(g_backgroundWindowClassName, (WNDPROC)BackgroundWindowProc);
 }
 
-ATOM RegisterForegroundWindowClass() {
-	return RegisterWindowClass(g_foregroundWindowClassName, (WNDPROC)ForegroundWindowProc);
-}*/
-
-bool CreateCDGWindow(HWND* phWnd, HDC* phDC, bool foreground) {
-	DWORD styles = WS_VISIBLE | (foreground ? WS_THICKFRAME : 0);
+bool CreateCDGWindow(HWND* phWnd, HDC* phDC, const WCHAR* pszClassName, DWORD additionalStyles = 0, DWORD additionalExStyles = 0) {
+	DWORD styles = WS_VISIBLE | additionalStyles;
 	*phWnd = CreateWindowEx(
-		WS_EX_LAYERED | WS_EX_NOACTIVATE,
-		foreground ? g_foregroundWindowClassName : g_backgroundWindowClassName,
-		foreground ? g_foregroundWindowClassName : g_backgroundWindowClassName,
+		WS_EX_LAYERED | additionalExStyles,
+		pszClassName,
+		pszClassName,
 		styles,
 		50, 50,
 		CDG_WIDTH, CDG_HEIGHT,
@@ -636,10 +617,6 @@ bool CreateCDGWindow(HWND* phWnd, HDC* phDC, bool foreground) {
 	if (*phWnd) {
 		*phDC = ::GetDC(*phWnd);
 		if (*phDC) {
-			if (foreground)
-				::SetLayeredWindowAttributes(*phWnd, DEFAULT_TRANSPARENT_COLOR, 255, LWA_COLORKEY);
-			else
-				::SetLayeredWindowAttributes(*phWnd, 0, g_nBackgroundOpacity, LWA_ALPHA);
 			::SetWindowLong(*phWnd, GWL_STYLE, styles);
 			::SetWindowPos(*phWnd, NULL, 50, 50, CDG_WIDTH, CDG_HEIGHT, SWP_NOZORDER | SWP_FRAMECHANGED);
 			RECT windowRect, clientRect;
@@ -657,64 +634,45 @@ bool CreateCDGWindow(HWND* phWnd, HDC* phDC, bool foreground) {
 }
 
 bool CreateForegroundWindow() {
-	return CreateCDGWindow(&g_hForegroundWindow, &g_hForegroundWindowDC, true);
+	return CreateCDGWindow(&g_hForegroundWindow, &g_hForegroundWindowDC, g_foregroundWindowClassName, WS_THICKFRAME, WS_EX_APPWINDOW);
 }
 
 bool CreateBackgroundWindow() {
-	return CreateCDGWindow(&g_hBackgroundWindow, &g_hBackgroundWindowDC, false);
+	return CreateCDGWindow(&g_hBackgroundWindow, &g_hBackgroundWindowDC, g_backgroundWindowClassName, 0, WS_EX_NOACTIVATE);
+}
+
+bool CreateBitmapSurface(HDC* phDC, HBITMAP* phBitmap, LPVOID* ppBitmapBits, int nWidth, int nHeight, int nBitCount) {
+	BITMAPINFO bitmapInfo;
+	bitmapInfo.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+	bitmapInfo.bmiHeader.biWidth = nWidth;
+	bitmapInfo.bmiHeader.biHeight = nHeight;
+	bitmapInfo.bmiHeader.biPlanes = 1;
+	bitmapInfo.bmiHeader.biBitCount = nBitCount;
+	bitmapInfo.bmiHeader.biCompression = BI_RGB;
+	bitmapInfo.bmiHeader.biSizeImage = 0;
+	bitmapInfo.bmiHeader.biXPelsPerMeter = 0;
+	bitmapInfo.bmiHeader.biYPelsPerMeter = 0;
+	bitmapInfo.bmiHeader.biClrUsed = 0;
+	bitmapInfo.bmiHeader.biClrImportant = 0;
+
+	bool result = false;
+	*phDC = ::CreateCompatibleDC(g_hForegroundWindowDC);
+	if (*phDC) {
+		*phBitmap = ::CreateDIBSection(*phDC, &bitmapInfo, 0, ppBitmapBits, NULL, 0);
+		if (*phBitmap) {
+			::SelectObject(*phDC, *phBitmap);
+			result = true;
+		}
+	}
+	return result;
 }
 
 bool CreateForegroundDC() {
-	BITMAPINFO bitmapInfo;
-	bitmapInfo.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-	bitmapInfo.bmiHeader.biWidth = CDG_BITMAP_WIDTH;
-	bitmapInfo.bmiHeader.biHeight = -CDG_BITMAP_HEIGHT;
-	bitmapInfo.bmiHeader.biPlanes = 1;
-	bitmapInfo.bmiHeader.biBitCount = 4;
-	bitmapInfo.bmiHeader.biCompression = BI_RGB;
-	bitmapInfo.bmiHeader.biSizeImage = 0;
-	bitmapInfo.bmiHeader.biXPelsPerMeter = 0;
-	bitmapInfo.bmiHeader.biYPelsPerMeter = 0;
-	bitmapInfo.bmiHeader.biClrUsed = 0;
-	bitmapInfo.bmiHeader.biClrImportant = 0;
-	g_hForegroundDC = ::CreateCompatibleDC(g_hForegroundWindowDC);
-	if (g_hForegroundDC) {
-		g_hForegroundBitmap = ::CreateDIBSection(g_hForegroundWindowDC, &bitmapInfo, 0, (void**)&g_pForegroundBitmapBits, NULL, 0);
-		if (g_hForegroundBitmap) {
-			::ZeroMemory(g_pForegroundBitmapBits, (((CDG_BITMAP_WIDTH) * (CDG_BITMAP_HEIGHT)) / 2));
-			::ZeroMemory(g_logicalPalette, sizeof(RGBQUAD) * 16);
-			::SelectObject(g_hForegroundDC, g_hForegroundBitmap);
-			::SetDIBColorTable(g_hForegroundDC, 0, 16, g_logicalPalette);
-			return true;
-		}
-	}
-	return false;
+	return CreateBitmapSurface(&g_hForegroundDC, &g_hForegroundBitmap, (LPVOID*)&g_pForegroundBitmapBits, CDG_BITMAP_WIDTH, -CDG_BITMAP_HEIGHT, 4);
 }
 
 bool CreateScrollBufferDC() {
-	bool result = false;
-	BITMAPINFO bitmapInfo;
-	bitmapInfo.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-	bitmapInfo.bmiHeader.biWidth = CDG_BITMAP_WIDTH;
-	bitmapInfo.bmiHeader.biHeight = -CDG_BITMAP_HEIGHT;
-	bitmapInfo.bmiHeader.biPlanes = 1;
-	bitmapInfo.bmiHeader.biBitCount = 4;
-	bitmapInfo.bmiHeader.biCompression = BI_RGB;
-	bitmapInfo.bmiHeader.biSizeImage = 0;
-	bitmapInfo.bmiHeader.biXPelsPerMeter = 0;
-	bitmapInfo.bmiHeader.biYPelsPerMeter = 0;
-	bitmapInfo.bmiHeader.biClrUsed = 0;
-	bitmapInfo.bmiHeader.biClrImportant = 0;
-	g_hScrollBufferDC = ::CreateCompatibleDC(g_hForegroundWindowDC);
-	if (g_hScrollBufferDC) {
-		g_hScrollBufferBitmap = ::CreateDIBSection(g_hForegroundWindowDC, &bitmapInfo, 0, (void**)&g_pScrollBufferBitmapBits, NULL, 0);
-		if (g_hScrollBufferBitmap) {
-			::ZeroMemory(g_pForegroundBitmapBits, (((CDG_BITMAP_WIDTH) * (CDG_BITMAP_HEIGHT)) / 2));
-			::SelectObject(g_hScrollBufferDC, g_hScrollBufferBitmap);
-			return true;
-		}
-	}
-	return false;
+	return CreateBitmapSurface(&g_hScrollBufferDC, &g_hScrollBufferBitmap, (LPVOID*)&g_pScrollBufferBitmapBits, CDG_BITMAP_WIDTH, -CDG_BITMAP_HEIGHT, 4);
 }
 
 bool CreateMaskedForegroundDC() {
@@ -743,54 +701,16 @@ bool CreateMaskDC() {
 }
 
 bool CreateBorderMaskDC() {
-	BITMAPINFO bitmapInfo;
-	bitmapInfo.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-	bitmapInfo.bmiHeader.biWidth = CDG_BITMAP_WIDTH;
-	bitmapInfo.bmiHeader.biHeight = CDG_BITMAP_HEIGHT;
-	bitmapInfo.bmiHeader.biPlanes = 1;
-	bitmapInfo.bmiHeader.biBitCount = 1;
-	bitmapInfo.bmiHeader.biCompression = BI_RGB;
-	bitmapInfo.bmiHeader.biSizeImage = 0;
-	bitmapInfo.bmiHeader.biXPelsPerMeter = 0;
-	bitmapInfo.bmiHeader.biYPelsPerMeter = 0;
-	bitmapInfo.bmiHeader.biClrUsed = 0;
-	bitmapInfo.bmiHeader.biClrImportant = 0;
-
-	bool result = false;
-	g_hBorderMaskDC = ::CreateCompatibleDC(g_hForegroundWindowDC);
-	if (g_hBorderMaskDC) {
-		g_hBorderMaskBitmap = ::CreateDIBSection(g_hForegroundWindowDC, &bitmapInfo, 0, (void**)&g_pBorderMaskBitmapBits, NULL, 0);
-		if (g_hBorderMaskBitmap) {
-			::SelectObject(g_hBorderMaskDC, g_hBorderMaskBitmap);
-			result = true;
-		}
-	}
-	return result;
+	bool result = CreateBitmapSurface(&g_hBorderMaskDC, &g_hBorderMaskBitmap, (LPVOID*)&g_pBorderMaskBitmapBits, CDG_BITMAP_WIDTH, CDG_BITMAP_HEIGHT, 1);
+	RGBQUAD monoPalette[] = {
+		{255,255,255,0},
+		{0,0,0,0}
+	};
+	return result && ::SetDIBColorTable(g_hBorderMaskDC, 0, 2, monoPalette);
 }
 
 bool CreateBackgroundDC() {
-	BITMAPINFO bitmapInfo;
-	bitmapInfo.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-	bitmapInfo.bmiHeader.biWidth = 1;
-	bitmapInfo.bmiHeader.biHeight = 1;
-	bitmapInfo.bmiHeader.biPlanes = 1;
-	bitmapInfo.bmiHeader.biBitCount = 32;
-	bitmapInfo.bmiHeader.biCompression = BI_RGB;
-	bitmapInfo.bmiHeader.biSizeImage = 0;
-	bitmapInfo.bmiHeader.biXPelsPerMeter = 0;
-	bitmapInfo.bmiHeader.biYPelsPerMeter = 0;
-	bitmapInfo.bmiHeader.biClrUsed = 0;
-	bitmapInfo.bmiHeader.biClrImportant = 0;
-
-	g_hBackgroundDC = ::CreateCompatibleDC(g_hBackgroundWindowDC);
-	if (g_hBackgroundDC) {
-		g_hBackgroundBitmap = ::CreateDIBSection(g_hBackgroundWindowDC, &bitmapInfo, 0, (void**)&g_pBackgroundBitmapBits, NULL, 0);
-		if (g_hBackgroundBitmap) {
-			::SelectObject(g_hBackgroundDC, g_hBackgroundBitmap);
-			return true;
-		}
-	}
-	return false;
+	return CreateBitmapSurface(&g_hBackgroundDC, &g_hBackgroundBitmap, (LPVOID*)&g_pBackgroundBitmapBits, 1, 1, 32);
 }
 
 void readCDGData(const WCHAR* pFileBeingPlayed) {
@@ -883,9 +803,25 @@ DWORD WINAPI StartSongThread(LPVOID pParams) {
 	free(pParams);
 	if (g_pCDGData) {
 		g_nCDGPC = 0;
+		g_bShowLogo = false;
 		::SetEvent(g_hSongLoadedEvent);
 	}
 	return 0;
+}
+
+void ClearCDGBuffer() {
+	::ZeroMemory(g_logicalPalette, sizeof(RGBQUAD) * 16);
+	::ZeroMemory(g_effectivePalette, sizeof(RGBQUAD) * 16);
+	g_logicalPalette[0].rgbBlue = g_effectivePalette[0].rgbBlue = g_nDefaultBackgroundColor & 0x00ff;
+	g_logicalPalette[0].rgbGreen = g_effectivePalette[0].rgbGreen = (g_nDefaultBackgroundColor >> 8) & 0x00ff;
+	g_logicalPalette[0].rgbRed = g_effectivePalette[0].rgbRed = (g_nDefaultBackgroundColor >> 16) & 0x00ff;
+	::ZeroMemory(g_pForegroundBitmapBits, (((CDG_BITMAP_WIDTH) * (CDG_BITMAP_HEIGHT)) / 2));
+	::ZeroMemory(g_pScrollBufferBitmapBits, (((CDG_BITMAP_WIDTH) * (CDG_BITMAP_HEIGHT)) / 2));
+	::SetDIBColorTable(g_hForegroundDC, 0, 16, g_logicalPalette);
+	SetBackgroundColorIndex(0);
+	g_bShowLogo = true;
+	::RedrawWindow(g_hForegroundWindow, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
+	::RedrawWindow(g_hBackgroundWindow, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
 }
 
 LRESULT CALLBACK CdgProWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
@@ -906,14 +842,16 @@ LRESULT CALLBACK CdgProWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lPara
 		}
 		case IPC_CB_MISC:
 			if (wParam == IPC_CB_MISC_STATUS) {
-				//ShowCDGDisplay(g_pCDGData && ::SendMessage(plugin.hwndParent, WM_WA_IPC, 0, IPC_ISPLAYING) != 0);
+				int isPlayingResult = ::SendMessage(plugin.hwndParent, WM_WA_IPC, 0, IPC_ISPLAYING);
+				if (!isPlayingResult)
+					::ClearCDGBuffer();
 			}
 			break;
 		}
 		break;
 	}
 	// Call Winamp Window Proc
-	return CallWindowProc(g_pOriginalWndProc, hwnd, uMsg, wParam, lParam);
+	return ::CallWindowProc(g_pOriginalWndProc, hwnd, uMsg, wParam, lParam);
 }
 
 bool CreateTransparentBrush() {
@@ -921,19 +859,38 @@ bool CreateTransparentBrush() {
 	return !!g_hTransparentBrush;
 }
 
+void LoadLogo() {
+	g_pLogoImage = new Image(g_pszLogoPath);
+	if (g_pLogoImage->GetLastStatus() == Ok) {
+		g_logoSize = { (LONG)g_pLogoImage->GetWidth(),(LONG)g_pLogoImage->GetHeight() };
+	}
+	else {
+		delete g_pLogoImage;
+		g_pLogoImage = NULL;
+	}
+}
+
 int init() {
-	if (CreateTransparentBrush())
-		if (RegisterBackgroundWindowClass())
-			if (RegisterForegroundWindowClass())
-				if (CreateBackgroundWindow())
-					if (CreateForegroundWindow())
-						if (CreateBackgroundDC())
-							if (CreateForegroundDC())
-								if (CreateMaskDC())
-									if (CreateBorderMaskDC())
-										if (CreateScrollBufferDC())
-											if (CreateMaskedForegroundDC())
-												if (StartCDGProcessingThread()) {
+	GdiplusStartupInput g_gdiPlusStartupInput;
+	GdiplusStartup(&g_gdiPlusToken, &g_gdiPlusStartupInput, NULL);
+	LoadLogo();
+	if (g_hIcon = ::LoadIcon(plugin.hDllInstance, MAKEINTRESOURCE(IDI_ICON1)))
+		if (CreateTransparentBrush())
+			if (RegisterBackgroundWindowClass())
+				if (RegisterForegroundWindowClass())
+					if (CreateBackgroundWindow())
+						if (CreateForegroundWindow())
+							if (CreateBackgroundDC())
+								if (CreateForegroundDC())
+									if (CreateMaskDC())
+										if (CreateBorderMaskDC())
+											if (CreateScrollBufferDC())
+												if (CreateMaskedForegroundDC()) {
+													if (::SetLayeredWindowAttributes(g_hForegroundWindow, DEFAULT_TRANSPARENT_COLOR, 255, LWA_COLORKEY))
+														if (::SetLayeredWindowAttributes(g_hBackgroundWindow, 0, g_nBackgroundOpacity, LWA_ALPHA))
+															if (StartCDGProcessingThread()) {
+																ClearCDGBuffer();
+															}
 												}
 
 	g_pOriginalWndProc = (WNDPROC)SetWindowLong(plugin.hwndParent, GWL_WNDPROC, (LONG)CdgProWndProc);
@@ -943,57 +900,39 @@ int init() {
 void config() {
 }
 
+void CloseWindow(HWND hWnd, HDC hDC) {
+	if (hDC)
+		::ReleaseDC(hWnd, hDC);
+	if (hWnd) {
+		::CloseWindow(hWnd);
+		::DestroyWindow(hWnd);
+	}
+}
+
+void DeleteDC(HDC hDC, HBITMAP hBitmap) {
+	if (hDC)
+		::DeleteDC(hDC);
+	if (hBitmap)
+		::DeleteObject(hBitmap);
+}
+
 void quit() {
 	::SetEvent(g_hStopCDGProcessingEvent);
 	::SetEvent(g_hStopCDGThreadEvent);
 	::WaitForSingleObject(g_hCDGProcessingThread, INFINITE);
 
-	SetWindowLong(plugin.hwndParent, GWL_WNDPROC, (LONG)g_pOriginalWndProc);
+	::SetWindowLong(plugin.hwndParent, GWL_WNDPROC, (LONG)g_pOriginalWndProc);
 
 	clearExistingCDGData();
 
-	if (g_hForegroundWindowDC)
-		::ReleaseDC(g_hForegroundWindow, g_hForegroundWindowDC);
-	if (g_hForegroundWindow) {
-		::CloseWindow(g_hForegroundWindow);
-		::DestroyWindow(g_hForegroundWindow);
-	}
-	if (g_hBackgroundWindowDC)
-		::ReleaseDC(g_hBackgroundWindow, g_hBackgroundWindowDC);
-	if (g_hBackgroundWindow) {
-		::CloseWindow(g_hBackgroundWindow);
-		::DestroyWindow(g_hBackgroundWindow);
-	}
-
-	if (g_hBackgroundDC)
-		::DeleteDC(g_hBackgroundDC);
-	if (g_hBackgroundBitmap)
-		::DeleteObject(g_hBackgroundBitmap);
-
-	if (g_hForegroundDC)
-		::DeleteDC(g_hForegroundDC);
-	if (g_hForegroundBitmap)
-		::DeleteObject(g_hForegroundBitmap);
-
-	if (g_hMaskDC)
-		::DeleteDC(g_hMaskDC);
-	if (g_hMaskBitmap)
-		::DeleteObject(g_hMaskBitmap);
-
-	if (g_hBorderMaskDC)
-		::DeleteDC(g_hBorderMaskDC);
-	if (g_hBorderMaskBitmap)
-		::DeleteObject(g_hBorderMaskBitmap);
-
-	if (g_hMaskedForegroundDC)
-		::DeleteDC(g_hMaskedForegroundDC);
-	if (g_hMaskedForegroundBitmap)
-		::DeleteObject(g_hMaskedForegroundBitmap);
-
-	if (g_hScrollBufferDC)
-		::DeleteDC(g_hScrollBufferDC);
-	if (g_hScrollBufferBitmap)
-		::DeleteObject(g_hScrollBufferBitmap);
+	CloseWindow(g_hForegroundWindow, g_hForegroundWindowDC);
+	CloseWindow(g_hBackgroundWindow, g_hBackgroundWindowDC);
+	DeleteDC(g_hBackgroundDC, g_hBackgroundBitmap);
+	DeleteDC(g_hForegroundDC, g_hForegroundBitmap);
+	DeleteDC(g_hMaskDC, g_hMaskBitmap);
+	DeleteDC(g_hBorderMaskDC, g_hBorderMaskBitmap);
+	DeleteDC(g_hMaskedForegroundDC, g_hMaskedForegroundBitmap);
+	DeleteDC(g_hScrollBufferDC, g_hScrollBufferBitmap);
 
 	if (g_hTransparentBrush)
 		::DeleteObject(g_hTransparentBrush);
@@ -1002,6 +941,13 @@ void quit() {
 	::CloseHandle(g_hStopCDGThreadEvent);
 	::CloseHandle(g_hSongLoadedEvent);
 
-	UnregisterClass(g_foregroundWindowClassName, plugin.hDllInstance);
-	UnregisterClass(g_backgroundWindowClassName, plugin.hDllInstance);
+	::UnregisterClass(g_foregroundWindowClassName, plugin.hDllInstance);
+	::UnregisterClass(g_backgroundWindowClassName, plugin.hDllInstance);
+
+	if (g_hIcon)
+		::DeleteObject(g_hIcon);
+	if (g_pLogoImage)
+		delete g_pLogoImage;
+
+	::GdiplusShutdown(g_gdiPlusToken);
 }
