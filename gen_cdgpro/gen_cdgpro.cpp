@@ -29,7 +29,7 @@ bool g_bDrawOutline = true;
 bool g_bShowBorder = false;
 // We periodically ask WinAmp how many milliseconds it has played of a song. This works fine
 // but as time goes on, it starts to get it wrong, falling behind by a tiny amount each time.
-// To keep the display in sync, we will multiple whatever WinAmp tells us by this amount.
+// To keep the display in sync, we will multiply whatever WinAmp tells us by this amount.
 double g_nTimeScaler = 1.00466;
 // How to determine the transparent background color?
 int g_nBackgroundDetectionMode = BDM_TOPRIGHTPIXEL;
@@ -83,9 +83,9 @@ typedef struct {
 #define CDG_MAXIMUM_BITMAP_HEIGHT (CDG_BITMAP_HEIGHT*MAXIMUM_SCALING_FACTOR)
 
 #define TOP_LEFT_PIXEL_OFFSET (((CDG_CELL_HEIGHT*CDG_BITMAP_WIDTH) + CDG_CELL_WIDTH) / 2)
-#define TOP_RIGHT_PIXEL_OFFSET (TOP_LEFT_PIXEL_OFFSET+(CDG_CANVAS_WIDTH-1))
+#define TOP_RIGHT_PIXEL_OFFSET (TOP_LEFT_PIXEL_OFFSET+((CDG_CANVAS_WIDTH/2)-1))
 #define BOTTOM_LEFT_PIXEL_OFFSET (((((CDG_CELL_HEIGHT+CDG_CANVAS_HEIGHT)-1)*CDG_BITMAP_WIDTH) + CDG_CELL_WIDTH) / 2)
-#define BOTTOM_RIGHT_PIXEL_OFFSET (BOTTOM_LEFT_PIXEL_OFFSET+(CDG_CANVAS_WIDTH-1))
+#define BOTTOM_RIGHT_PIXEL_OFFSET (BOTTOM_LEFT_PIXEL_OFFSET+((CDG_CANVAS_WIDTH/2)-1))
 
 // Each CDG frame is 1/300th of a second.
 #define CDG_FRAME_DURATION_MS (1000.0/300.0)
@@ -642,6 +642,8 @@ LRESULT CALLBACK ForegroundWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARA
 		::SetWindowPos(g_hBackgroundWindow, hwnd, 0, 0, w, h, SWP_NOMOVE | SWP_NOACTIVATE);
 		break;
 	}
+	case WM_CLOSE:
+		return 1;
 	case WM_PAINT:
 		DrawForeground();
 		break;
