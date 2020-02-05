@@ -32,7 +32,7 @@ bool g_bShowBorder = false;
 // To keep the display in sync, we will multiple whatever WinAmp tells us by this amount.
 double g_nTimeScaler = 1.00466;
 // How to determine the transparent background color?
-int g_nBackgroundDetectionMode = BDM_TOPLEFTPIXEL;
+int g_nBackgroundDetectionMode = BDM_TOPRIGHTPIXEL;
 // Default background colour when there is no song playing.
 int g_nDefaultBackgroundColor = 0x0055ff;
 // Scale2x/4x smoothing?
