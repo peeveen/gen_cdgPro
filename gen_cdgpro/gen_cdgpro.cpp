@@ -32,7 +32,7 @@ bool g_bShowBorder = false;
 // To keep the display in sync, we will multiple whatever WinAmp tells us by this amount.
 double g_nTimeScaler = 1.00466;
 // How to determine the transparent background color?
-int g_nBackgroundDetectionMode = BDM_TOPRIGHTPIXEL;
+int g_nBackgroundDetectionMode = BDM_TOPLEFTPIXEL;
 // Default background colour when there is no song playing.
 int g_nDefaultBackgroundColor = 0x0055ff;
 // Scale2x/4x smoothing?
@@ -190,6 +190,7 @@ winampGeneralPurposePlugin plugin = { GPPHDR_VER,PLUGIN_NAME,init,config,quit,0,
 // We keep track of the last "reset" color. If we receive a MemoryPreset command for this color
 // again before anything else has been drawn, we can ignore it.
 BYTE g_nLastMemoryPresetColor = -1;
+BYTE g_nCurrentTransparentIndex = 0;
 // Handle and ID of the processing thread, as well as an event for stopping it.
 HANDLE g_hCDGProcessingThread = NULL;
 DWORD g_nCDGProcessingThreadID = 0;
@@ -229,10 +230,11 @@ void clearExistingCDGData() {
 }
 
 void SetBackgroundColorIndex(byte index) {
+	g_nCurrentTransparentIndex = index;
 	// RGB macro, for some reason, encodes as BGR. Not so handy for direct 32-bit bitmap writing.
 	COLORREF backgroundColorReversed = RGB(g_effectivePalette[index].rgbBlue, g_effectivePalette[index].rgbGreen, g_effectivePalette[index].rgbRed);
 	*g_pBackgroundBitmapBits = backgroundColorReversed;
-	COLORREF backgroundColor = RGB(g_effectivePalette[index].rgbRed, g_effectivePalette[index].rgbRed, g_effectivePalette[index].rgbBlue);
+	COLORREF backgroundColor = RGB(g_effectivePalette[index].rgbRed, g_effectivePalette[index].rgbGreen, g_effectivePalette[index].rgbBlue);
 	for(int f=0;f<SUPPORTED_SCALING_LEVELS;++f)
 		::SetBkColor(g_hScaledForegroundDCs[f], backgroundColor);
 }
@@ -330,8 +332,13 @@ byte TileBlock(byte* pData, bool isXor) {
 	// Did we write to the non-border screen area?
 	byte result = (row < (CDG_HEIGHT_CELLS - 1) && row>0 && col < (CDG_WIDTH_CELLS - 1) && col>0) ? 0x03 : 0x02;
 	// Also need to know if the background needs refreshed.
-	if (!CheckPixelColorBackgroundChange(col == 1 && row == 1, col == CDG_WIDTH_CELLS - 2 && row == 1, col == 1 && row == CDG_HEIGHT_CELLS - 2, col == CDG_WIDTH_CELLS - 2 && row == CDG_HEIGHT_CELLS - 2))
-		result &= 0x01;
+	bool topLeftPixelSet = col == 1 && row == 1;
+	bool topRightPixelSet = col == CDG_WIDTH_CELLS - 2 && row == 1;
+	bool bottomLeftPixelSet = col == 1 && row == CDG_HEIGHT_CELLS - 2;
+	bool bottomRightPixelSet = col == CDG_WIDTH_CELLS - 2 && row == CDG_HEIGHT_CELLS - 2;
+	if(topLeftPixelSet || topRightPixelSet || bottomLeftPixelSet || bottomRightPixelSet)
+		if (!CheckPixelColorBackgroundChange(topLeftPixelSet, topRightPixelSet, bottomLeftPixelSet, bottomRightPixelSet))
+			result &= 0x01;
 	// Screen is no longer blank.
 	g_nLastMemoryPresetColor = -1;
 	return result;
@@ -384,12 +391,8 @@ byte LoadColorTable(byte* pData, bool highTable) {
 	for(int f=0;f<SUPPORTED_SCALING_LEVELS;++f)
 		::SetDIBColorTable(g_hScaledForegroundDCs[f], 0, 16, g_effectivePalette);
 	::SetDIBColorTable(g_hScrollBufferDC, 0, 16, g_effectivePalette);
-	byte result = 0x01;
-	if ((!highTable) && g_nBackgroundDetectionMode == BDM_PALETTEINDEXZERO) {
-		SetBackgroundColorIndex(0);
-		result |= 0x02;
-	}
-	return result;
+	SetBackgroundColorIndex(g_nCurrentTransparentIndex);
+	return 0x01|(g_nCurrentTransparentIndex>= nPaletteStartIndex && g_nCurrentTransparentIndex<nPaletteStartIndex+8?0x02:0x00);
 }
 
 byte Scroll(byte color, byte hScroll, byte hScrollOffset, byte vScroll, byte vScrollOffset, bool copy) {
@@ -893,6 +896,7 @@ DWORD WINAPI StartSongThread(LPVOID pParams) {
 	free(pParams);
 	if (g_pCDGData) {
 		g_nCDGPC = 0;
+		g_nCurrentTransparentIndex = 0;
 		g_bShowLogo = false;
 		::SetEvent(g_hSongLoadedEvent);
 	}
