@@ -24,7 +24,7 @@ using namespace Gdiplus;
 #define BDM_BOTTOMRIGHTPIXEL 4
 
 // Preferences (TODO: INI file or UI).
-int g_nBackgroundOpacity = 127;
+int g_nBackgroundOpacity = 160;
 bool g_bDrawOutline = true;
 bool g_bShowBorder = false;
 // We periodically ask WinAmp how many milliseconds it has played of a song. This works fine
@@ -34,9 +34,9 @@ double g_nTimeScaler = 1.00466;
 // How to determine the transparent background color?
 int g_nBackgroundDetectionMode = BDM_TOPRIGHTPIXEL;
 // Default background colour when there is no song playing.
-int g_nDefaultBackgroundColor = 0x0000ff;
-// Smoothing of the jaggy CDG graphics? Not yet implemented.
-bool g_bEnableSmoothing = true;
+int g_nDefaultBackgroundColor = 0x0055ff;
+// Scale2x/4x smoothing?
+int g_nSmoothingPasses = 2;
 // Logo to display when there is no song playing.
 const WCHAR* g_pszLogoPath = L"C:\\Users\\steven.frew\\Desktop\\smallLogo.png";
 
@@ -68,6 +68,20 @@ typedef struct {
 #define CDG_CANVAS_WIDTH (288)
 #define CDG_CANVAS_HEIGHT (192)
 
+// In Windows, bitmaps must have a width that is a multiple of 4 bytes.
+// We are storing two bitmaps to represent the CDG display,
+// one of which is 4 bits per pixel, and one which is 1 bit per pixel.
+// Because of the 1bpp bitmap, this means that the bitmap width
+// must be a multiple of 32 (32 bits = 4 bytes).
+#define CDG_BITMAP_WIDTH (320)
+#define CDG_BITMAP_HEIGHT CDG_HEIGHT
+
+// For smoothing purposes, we will scale the graphics up and apply a smoothing algorithm.
+#define SUPPORTED_SCALING_LEVELS (3) // 1x,2x,4x
+#define MAXIMUM_SCALING_FACTOR (4)
+#define CDG_MAXIMUM_BITMAP_WIDTH (CDG_BITMAP_WIDTH*MAXIMUM_SCALING_FACTOR)
+#define CDG_MAXIMUM_BITMAP_HEIGHT (CDG_BITMAP_HEIGHT*MAXIMUM_SCALING_FACTOR)
+
 #define TOP_LEFT_PIXEL_OFFSET (((CDG_CELL_HEIGHT*CDG_BITMAP_WIDTH) + CDG_CELL_WIDTH) / 2)
 #define TOP_RIGHT_PIXEL_OFFSET (TOP_LEFT_PIXEL_OFFSET+(CDG_CANVAS_WIDTH-1))
 #define BOTTOM_LEFT_PIXEL_OFFSET (((((CDG_CELL_HEIGHT+CDG_CANVAS_HEIGHT)-1)*CDG_BITMAP_WIDTH) + CDG_CELL_WIDTH) / 2)
@@ -92,18 +106,13 @@ typedef struct {
 // Update screen approximately 30 FPS
 #define SCREEN_REFRESH_MS (33)
 
-// In Windows, bitmaps must have a width that is a multiple of 4 bytes.
-// We are storing two bitmaps to represent the CDG display,
-// one of which is 4 bits per pixel, and one which is 1 bit per pixel.
-// Because of the 1bpp bitmap, this means that the bitmap width
-// must be a multiple of 32 (32 bits = 4 bytes).
-#define CDG_BITMAP_WIDTH (320)
-#define CDG_BITMAP_HEIGHT CDG_HEIGHT
-
 // This is the colour we will use for transparency. It is impossible to
 // represent this as a 12-bit colour, and each value is a different distance from
 // a multiple of 17, so it should never accidentally happen.
-#define DEFAULT_TRANSPARENT_COLOR (RGB(145,67,219))
+#define DEFAULT_TRANSPARENT_COLOR_RED (145)
+#define DEFAULT_TRANSPARENT_COLOR_GREEN (67)
+#define DEFAULT_TRANSPARENT_COLOR_BLUE (219)
+#define DEFAULT_TRANSPARENT_COLORREF (RGB(DEFAULT_TRANSPARENT_COLOR_RED,DEFAULT_TRANSPARENT_COLOR_GREEN,DEFAULT_TRANSPARENT_COLOR_BLUE))
 
 // WinAmp messages.
 #define WM_WA_IPC WM_USER
@@ -140,22 +149,22 @@ void quit(void);
 // Window class names.
 const WCHAR* g_foregroundWindowClassName = L"CDGProFG";
 const WCHAR* g_backgroundWindowClassName = L"CDGProBG";
-// The DC and bitmap containing the CDG graphics.
-HDC g_hForegroundDC = NULL;
-HBITMAP g_hForegroundBitmap = NULL;
-BYTE* g_pForegroundBitmapBits = NULL;
 // The DC and bitmap containing the background (usually 1 pixel that we stretch out).
 HDC g_hBackgroundDC = NULL;
 HBITMAP g_hBackgroundBitmap = NULL;
 unsigned int* g_pBackgroundBitmapBits = NULL;
-// The DC containing the mask for the CDG graphics, if we want to render a transparent background.
+// The DC and bitmap containing the CDG graphics.
+HDC g_hScaledForegroundDCs[SUPPORTED_SCALING_LEVELS];
+HBITMAP g_hScaledForegroundBitmaps[SUPPORTED_SCALING_LEVELS];
+BYTE* g_pScaledForegroundBitmapBits[SUPPORTED_SCALING_LEVELS];
+// The DC containing the mask for the CDG graphics.
 HDC g_hMaskDC = NULL;
 HBITMAP g_hMaskBitmap = NULL;
-// The DC containing the border mask for the CDG graphics, if we want to render a transparent background.
+// The DC containing the border mask for the CDG graphics.
 HDC g_hBorderMaskDC = NULL;
 HBITMAP g_hBorderMaskBitmap = NULL;
 BYTE* g_pBorderMaskBitmapBits = NULL;
-// The DC containing the mask for the CDG graphics, if we want to render a transparent background.
+// The DC containing the masked CDG graphics.
 HDC g_hMaskedForegroundDC = NULL;
 HBITMAP g_hMaskedForegroundBitmap = NULL;
 // The scroll buffer DC and bitmap.
@@ -224,18 +233,19 @@ void SetBackgroundColorIndex(byte index) {
 	COLORREF backgroundColorReversed = RGB(g_effectivePalette[index].rgbBlue, g_effectivePalette[index].rgbGreen, g_effectivePalette[index].rgbRed);
 	*g_pBackgroundBitmapBits = backgroundColorReversed;
 	COLORREF backgroundColor = RGB(g_effectivePalette[index].rgbRed, g_effectivePalette[index].rgbRed, g_effectivePalette[index].rgbBlue);
-	::SetBkColor(g_hForegroundDC, backgroundColor);
+	for(int f=0;f<SUPPORTED_SCALING_LEVELS;++f)
+		::SetBkColor(g_hScaledForegroundDCs[f], backgroundColor);
 }
 
 void SetBackgroundColorFromPixel(int offset, bool highNibble) {
-	byte color = (g_pForegroundBitmapBits[offset] >> (highNibble ? 4 : 0)) & 0x0F;
+	byte color = (g_pScaledForegroundBitmapBits[0][offset] >> (highNibble ? 4 : 0)) & 0x0F;
 	SetBackgroundColorIndex(color);
 }
 
 byte MemoryPreset(BYTE color, BYTE repeat) {
 	if (g_nLastMemoryPresetColor == color)
 		return 0x00;
-	memset(g_pForegroundBitmapBits, (color << 4) | color, (CDG_BITMAP_WIDTH * CDG_BITMAP_HEIGHT) / 2);
+	memset(g_pScaledForegroundBitmapBits[0], (color << 4) | color, (CDG_BITMAP_WIDTH * CDG_BITMAP_HEIGHT) / 2);
 	g_nLastMemoryPresetColor = color;
 	switch (g_nBackgroundDetectionMode) {
 	case BDM_TOPLEFTPIXEL:
@@ -253,12 +263,13 @@ byte MemoryPreset(BYTE color, BYTE repeat) {
 void BorderPreset(BYTE color) {
 	byte colorByte = (color << 4) | color;
 	// Top and bottom edge.
-	memset(g_pForegroundBitmapBits, colorByte, (CDG_BITMAP_WIDTH * CDG_CELL_HEIGHT) / 2);
-	memset(g_pForegroundBitmapBits + (((CDG_BITMAP_WIDTH * CDG_BITMAP_HEIGHT) - (CDG_BITMAP_WIDTH * CDG_CELL_HEIGHT)) / 2), colorByte, (CDG_BITMAP_WIDTH * CDG_CELL_HEIGHT) / 2);
+	BYTE* pForegroundBitmapBits=g_pScaledForegroundBitmapBits[0];
+	memset(pForegroundBitmapBits, colorByte, (CDG_BITMAP_WIDTH * CDG_CELL_HEIGHT) / 2);
+	memset(pForegroundBitmapBits + (((CDG_BITMAP_WIDTH * CDG_BITMAP_HEIGHT) - (CDG_BITMAP_WIDTH * CDG_CELL_HEIGHT)) / 2), colorByte, (CDG_BITMAP_WIDTH * CDG_CELL_HEIGHT) / 2);
 	// Left and right edge.
 	for (int f = CDG_CELL_HEIGHT; f < CDG_CELL_HEIGHT + CDG_CANVAS_HEIGHT; ++f) {
-		memset(g_pForegroundBitmapBits + ((f * CDG_BITMAP_WIDTH) / 2), colorByte, CDG_CELL_WIDTH / 2);
-		memset(g_pForegroundBitmapBits + ((f * CDG_BITMAP_WIDTH) / 2) + ((CDG_WIDTH - CDG_CELL_WIDTH) / 2), colorByte, CDG_CELL_WIDTH / 2);
+		memset(pForegroundBitmapBits + ((f * CDG_BITMAP_WIDTH) / 2), colorByte, CDG_CELL_WIDTH / 2);
+		memset(pForegroundBitmapBits + ((f * CDG_BITMAP_WIDTH) / 2) + ((CDG_WIDTH - CDG_CELL_WIDTH) / 2), colorByte, CDG_CELL_WIDTH / 2);
 	}
 	// Screen is no longer "blank".
 	g_nLastMemoryPresetColor = -1;
@@ -288,11 +299,15 @@ byte TileBlock(byte* pData, bool isXor) {
 	//	return;
 	byte row = pData[2] & 0x3F;
 	byte col = pData[3] & 0x3F;
+	// If the coordinates are offscreen, reject them as bad data.
+	if (col >= CDG_WIDTH_CELLS || row >= CDG_HEIGHT_CELLS)
+		return 0x00;
 	byte upperFgColor = fgColor << 4;
 	byte upperBgColor = bgColor << 4;
 	int xPixel = col * CDG_CELL_WIDTH;
 	int yPixel = row * CDG_CELL_HEIGHT;
 	int foregroundBitmapOffset = ((xPixel)+(yPixel * CDG_BITMAP_WIDTH)) / 2;
+	BYTE* pForegroundBitmapBits = g_pScaledForegroundBitmapBits[0];
 	// The remaining 12 bytes in the data field will contain the bitmask of pixels to set.
 	// The lower six bits of each byte are the pixel mask.
 	for (int f = 0; f < 12; ++f) {
@@ -301,14 +316,14 @@ byte TileBlock(byte* pData, bool isXor) {
 		g_blockBuffer[1] = ((bits & 0x08) ? upperFgColor : upperBgColor) | ((bits & 0x04) ? fgColor : bgColor);
 		g_blockBuffer[2] = ((bits & 0x02) ? upperFgColor : upperBgColor) | ((bits & 0x01) ? fgColor : bgColor);
 		if (isXor) {
-			g_pForegroundBitmapBits[foregroundBitmapOffset] ^= g_blockBuffer[0];
-			g_pForegroundBitmapBits[foregroundBitmapOffset + 1] ^= g_blockBuffer[1];
-			g_pForegroundBitmapBits[foregroundBitmapOffset + 2] ^= g_blockBuffer[2];
+			pForegroundBitmapBits[foregroundBitmapOffset] ^= g_blockBuffer[0];
+			pForegroundBitmapBits[foregroundBitmapOffset + 1] ^= g_blockBuffer[1];
+			pForegroundBitmapBits[foregroundBitmapOffset + 2] ^= g_blockBuffer[2];
 		}
 		else {
-			g_pForegroundBitmapBits[foregroundBitmapOffset] = g_blockBuffer[0];
-			g_pForegroundBitmapBits[foregroundBitmapOffset + 1] = g_blockBuffer[1];
-			g_pForegroundBitmapBits[foregroundBitmapOffset + 2] = g_blockBuffer[2];
+			pForegroundBitmapBits[foregroundBitmapOffset] = g_blockBuffer[0];
+			pForegroundBitmapBits[foregroundBitmapOffset + 1] = g_blockBuffer[1];
+			pForegroundBitmapBits[foregroundBitmapOffset + 2] = g_blockBuffer[2];
 		}
 		foregroundBitmapOffset += (CDG_BITMAP_WIDTH / 2);
 	}
@@ -366,7 +381,8 @@ byte LoadColorTable(byte* pData, bool highTable) {
 			}
 		}
 	}
-	::SetDIBColorTable(g_hForegroundDC, 0, 16, g_effectivePalette);
+	for(int f=0;f<SUPPORTED_SCALING_LEVELS;++f)
+		::SetDIBColorTable(g_hScaledForegroundDCs[f], 0, 16, g_effectivePalette);
 	::SetDIBColorTable(g_hScrollBufferDC, 0, 16, g_effectivePalette);
 	byte result = 0x01;
 	if ((!highTable) && g_nBackgroundDetectionMode == BDM_PALETTEINDEXZERO) {
@@ -382,18 +398,19 @@ byte Scroll(byte color, byte hScroll, byte hScrollOffset, byte vScroll, byte vSc
 	g_nCanvasXOffset = hScrollOffset;
 	g_nCanvasYOffset = vScrollOffset;
 	// This should be faster than BitBlt
-	memcpy(g_pScrollBufferBitmapBits, g_pForegroundBitmapBits, (CDG_BITMAP_WIDTH * CDG_BITMAP_HEIGHT) / 2);
-	::BitBlt(g_hForegroundDC, nHScrollPixels, nVScrollPixels, CDG_BITMAP_WIDTH, CDG_BITMAP_HEIGHT, g_hScrollBufferDC, 0, 0, SRCCOPY);
+	memcpy(g_pScrollBufferBitmapBits, g_pScaledForegroundBitmapBits[0], (CDG_BITMAP_WIDTH * CDG_BITMAP_HEIGHT) / 2);
+	HDC hForegroundDC = g_hScaledForegroundDCs[0];
+	::BitBlt(hForegroundDC, nHScrollPixels, nVScrollPixels, CDG_BITMAP_WIDTH, CDG_BITMAP_HEIGHT, g_hScrollBufferDC, 0, 0, SRCCOPY);
 	if (copy) {
 		if (nVScrollPixels > 0)
-			::BitBlt(g_hForegroundDC, nHScrollPixels, 0, CDG_BITMAP_WIDTH, nVScrollPixels, g_hScrollBufferDC, 0, CDG_HEIGHT - nVScrollPixels, SRCCOPY);
+			::BitBlt(hForegroundDC, nHScrollPixels, 0, CDG_BITMAP_WIDTH, nVScrollPixels, g_hScrollBufferDC, 0, CDG_HEIGHT - nVScrollPixels, SRCCOPY);
 		else if (nVScrollPixels < 0)
-			::BitBlt(g_hForegroundDC, nHScrollPixels, CDG_HEIGHT + nVScrollPixels, CDG_BITMAP_WIDTH, -nVScrollPixels, g_hScrollBufferDC, 0, 0, SRCCOPY);
+			::BitBlt(hForegroundDC, nHScrollPixels, CDG_HEIGHT + nVScrollPixels, CDG_BITMAP_WIDTH, -nVScrollPixels, g_hScrollBufferDC, 0, 0, SRCCOPY);
 
 		if (nHScrollPixels > 0)
-			::BitBlt(g_hForegroundDC, 0, nVScrollPixels, nHScrollPixels, CDG_BITMAP_HEIGHT, g_hScrollBufferDC, CDG_WIDTH - nHScrollPixels, 0, SRCCOPY);
+			::BitBlt(hForegroundDC, 0, nVScrollPixels, nHScrollPixels, CDG_BITMAP_HEIGHT, g_hScrollBufferDC, CDG_WIDTH - nHScrollPixels, 0, SRCCOPY);
 		else if (nHScrollPixels < 0)
-			::BitBlt(g_hForegroundDC, CDG_WIDTH + nHScrollPixels, nVScrollPixels, -nHScrollPixels, CDG_BITMAP_HEIGHT, g_hScrollBufferDC, 0, 0, SRCCOPY);
+			::BitBlt(hForegroundDC, CDG_WIDTH + nHScrollPixels, nVScrollPixels, -nHScrollPixels, CDG_BITMAP_HEIGHT, g_hScrollBufferDC, 0, 0, SRCCOPY);
 	}
 	else if (color != g_nLastMemoryPresetColor)
 		g_nLastMemoryPresetColor = -1;
@@ -462,6 +479,66 @@ byte ProcessCDGPackets() {
 	return result;
 }
 
+void Perform2xSmoothing(BYTE *pSourceBitmapBits,BYTE *pDestinationBitmapBits,int nW,int nH,int nSourceBitmapWidth) {
+	// 2x smoothing
+	static byte EAandEB, BAandBB, HAandHB;
+	static byte EA, EB;
+	static byte B,D,F,H;
+	static byte E0, E1, E2, E3;
+	int right = nW-1;
+	int bottom = nH-1;
+	int halfBitmapWidth = nSourceBitmapWidth >>1;
+	int doubleBitmapWidth = nSourceBitmapWidth <<1;
+	int destFinishingOffset = nSourceBitmapWidth + (nSourceBitmapWidth - nW);
+	int sourceFinishingOffset = halfBitmapWidth - (nW / 2);
+	for (int y = 0; y <= bottom; ++y) {
+		for (int x = 0; x <= right; x += 2) {
+			// Each byte is two pixels.
+			EAandEB = *pSourceBitmapBits;
+			BAandBB = y ? *(pSourceBitmapBits - halfBitmapWidth) : EAandEB;
+			HAandHB = y == bottom ? EAandEB : *(pSourceBitmapBits + halfBitmapWidth);
+			EA = (EAandEB >> 4) & 0x0F;
+			EB = EAandEB & 0x0F;
+
+			// First pixel.
+			D = x ? *(pSourceBitmapBits - 1) & 0x0F : EA;
+			F = EB;
+			B = (BAandBB >> 4) & 0x0F;
+			H = (HAandHB >> 4) & 0x0F;
+
+			if (B != H && D != F) {
+				E0 = D == B ? D : EA;
+				E1 = B == F ? F : EA;
+				E2 = D == H ? D : EA;
+				E3 = H == F ? F : EA;
+			}
+			else
+				E0 = E1 = E2 = E3 = EA;
+			*pDestinationBitmapBits = (E0 << 4) | E1;
+			*((pDestinationBitmapBits++) + nSourceBitmapWidth) = (E2 << 4) | E3;
+
+			// Second pixel.
+			D = EA;
+			F = x == right?EB:(*(pSourceBitmapBits++ +1) >> 4) & 0x0F;
+			B = BAandBB & 0x0F;
+			H = HAandHB & 0x0F;
+
+			if (B != H && D != F) {
+				E0 = D == B ? D : EB;
+				E1 = B == F ? F : EB;
+				E2 = D == H ? D : EB;
+				E3 = H == F ? F : EB;
+			}
+			else
+				E0 = E1 = E2 = E3 = EB;
+			*pDestinationBitmapBits = (E0 << 4) | E1;
+			*((pDestinationBitmapBits++) + nSourceBitmapWidth) = (E2 << 4) | E3;
+		}
+		pSourceBitmapBits += sourceFinishingOffset;
+		pDestinationBitmapBits += destFinishingOffset;
+	}
+}
+
 void DrawBackground() {
 	RECT r;
 	::GetClientRect(g_hBackgroundWindow, &r);
@@ -470,19 +547,27 @@ void DrawBackground() {
 
 void DrawForeground() {
 	RECT r;
+	HDC hSourceDC = g_hScaledForegroundDCs[0];
 	::GetClientRect(g_hForegroundWindow, &r);
-
-	::BitBlt(g_hMaskDC, 0, 0, CDG_BITMAP_WIDTH, CDG_BITMAP_HEIGHT, g_hForegroundDC, 0, 0, SRCCOPY);
-	::ZeroMemory(g_pBorderMaskBitmapBits, (CDG_BITMAP_WIDTH * CDG_BITMAP_HEIGHT) / 8);
-	for (int f = -1; f < 2; ++f)
-		for (int g = -1; g < 2; ++g)
+	int nScaling = 1;
+	for (int f = 0; f < g_nSmoothingPasses && f<(SUPPORTED_SCALING_LEVELS-1); ++f) {
+		int startX = CDG_CANVAS_X * nScaling;
+		int startY = CDG_CANVAS_Y * nScaling;
+		int width = CDG_WIDTH * nScaling;
+		int height = CDG_HEIGHT * nScaling;
+		int sourceWidth = CDG_BITMAP_WIDTH * nScaling;
+		Perform2xSmoothing(g_pScaledForegroundBitmapBits[f], g_pScaledForegroundBitmapBits[f+1], width,height, sourceWidth);
+		nScaling *= 2;
+		hSourceDC = g_hScaledForegroundDCs[f+1];
+	}
+	::BitBlt(g_hMaskDC, 0, 0, CDG_BITMAP_WIDTH*nScaling, CDG_BITMAP_HEIGHT*nScaling, hSourceDC, 0, 0, SRCCOPY);
+	::ZeroMemory(g_pBorderMaskBitmapBits, (CDG_MAXIMUM_BITMAP_WIDTH * CDG_MAXIMUM_BITMAP_HEIGHT) / 8);
+	for (int f = -nScaling; f <= nScaling; ++f)
+		for (int g = -nScaling; g <= nScaling; ++g)
 			if (g_bDrawOutline || (!f && !g))
-				::BitBlt(g_hBorderMaskDC, f, g, CDG_BITMAP_WIDTH, CDG_BITMAP_HEIGHT, g_hMaskDC, 0, 0, SRCPAINT);
-	::MaskBlt(g_hMaskedForegroundDC, 0, 0, CDG_BITMAP_WIDTH, CDG_BITMAP_HEIGHT, g_hForegroundDC, 0, 0, g_hBorderMaskBitmap, 0, 0, MAKEROP4(SRCCOPY, PATCOPY));
-	if (g_bShowBorder)
-		::StretchBlt(g_hForegroundWindowDC, 0, 0, r.right - r.left, r.bottom - r.top, g_hMaskedForegroundDC, g_nCanvasXOffset, g_nCanvasYOffset, CDG_WIDTH, CDG_HEIGHT, SRCCOPY);
-	else
-		::StretchBlt(g_hForegroundWindowDC, 0, 0, r.right - r.left, r.bottom - r.top, g_hMaskedForegroundDC, CDG_CANVAS_X + g_nCanvasXOffset, CDG_CANVAS_Y + g_nCanvasYOffset, CDG_CANVAS_WIDTH, CDG_CANVAS_HEIGHT, SRCCOPY);
+				::BitBlt(g_hBorderMaskDC, f, g, CDG_BITMAP_WIDTH * nScaling, CDG_BITMAP_HEIGHT * nScaling, g_hMaskDC, 0,0, SRCPAINT);
+	::MaskBlt(g_hMaskedForegroundDC, 0, 0, CDG_BITMAP_WIDTH * nScaling, CDG_BITMAP_HEIGHT * nScaling, hSourceDC, 0, 0, g_hBorderMaskBitmap, 0, 0, MAKEROP4(SRCCOPY, PATCOPY));
+	::StretchBlt(g_hForegroundWindowDC, 0, 0, r.right - r.left, r.bottom - r.top, g_hMaskedForegroundDC, (CDG_CANVAS_X + g_nCanvasXOffset)*nScaling, (CDG_CANVAS_Y + g_nCanvasYOffset) * nScaling, CDG_CANVAS_WIDTH*nScaling, CDG_CANVAS_HEIGHT*nScaling, SRCCOPY);
 	if (g_pLogoImage && g_bShowLogo) {
 		RECT r;
 		::GetClientRect(g_hForegroundWindow, &r);
@@ -655,20 +740,25 @@ bool CreateBitmapSurface(HDC* phDC, HBITMAP* phBitmap, LPVOID* ppBitmapBits, int
 	bitmapInfo.bmiHeader.biClrUsed = 0;
 	bitmapInfo.bmiHeader.biClrImportant = 0;
 
-	bool result = false;
 	*phDC = ::CreateCompatibleDC(g_hForegroundWindowDC);
 	if (*phDC) {
 		*phBitmap = ::CreateDIBSection(*phDC, &bitmapInfo, 0, ppBitmapBits, NULL, 0);
 		if (*phBitmap) {
 			::SelectObject(*phDC, *phBitmap);
-			result = true;
+			return true;
 		}
 	}
-	return result;
+	return false;
 }
 
-bool CreateForegroundDC() {
-	return CreateBitmapSurface(&g_hForegroundDC, &g_hForegroundBitmap, (LPVOID*)&g_pForegroundBitmapBits, CDG_BITMAP_WIDTH, -CDG_BITMAP_HEIGHT, 4);
+bool CreateForegroundDCs() {
+	int nScaling = 1;
+	for (int f = 0; f < SUPPORTED_SCALING_LEVELS; ++f) {
+		if (!CreateBitmapSurface(&(g_hScaledForegroundDCs[f]), &(g_hScaledForegroundBitmaps[f]), (LPVOID *)(&(g_pScaledForegroundBitmapBits[f])), CDG_BITMAP_WIDTH * nScaling, -CDG_BITMAP_HEIGHT * nScaling, 4))
+			return false;
+		nScaling *= 2;
+	}
+	return true;
 }
 
 bool CreateScrollBufferDC() {
@@ -678,7 +768,7 @@ bool CreateScrollBufferDC() {
 bool CreateMaskedForegroundDC() {
 	g_hMaskedForegroundDC = ::CreateCompatibleDC(g_hForegroundWindowDC);
 	if (g_hMaskedForegroundDC) {
-		g_hMaskedForegroundBitmap = ::CreateCompatibleBitmap(g_hForegroundWindowDC, CDG_BITMAP_WIDTH, CDG_BITMAP_HEIGHT);
+		g_hMaskedForegroundBitmap = ::CreateCompatibleBitmap(g_hForegroundWindowDC, CDG_MAXIMUM_BITMAP_WIDTH, CDG_MAXIMUM_BITMAP_HEIGHT);
 		if (g_hMaskedForegroundBitmap) {
 			::SelectObject(g_hMaskedForegroundDC, g_hTransparentBrush);
 			::SelectObject(g_hMaskedForegroundDC, g_hMaskedForegroundBitmap);
@@ -691,7 +781,7 @@ bool CreateMaskedForegroundDC() {
 bool CreateMaskDC() {
 	g_hMaskDC = ::CreateCompatibleDC(g_hForegroundWindowDC);
 	if (g_hMaskDC) {
-		g_hMaskBitmap = ::CreateBitmap(CDG_BITMAP_WIDTH, CDG_BITMAP_HEIGHT, 1, 1, NULL);
+		g_hMaskBitmap = ::CreateBitmap(CDG_MAXIMUM_BITMAP_WIDTH, CDG_MAXIMUM_BITMAP_HEIGHT, 1, 1, NULL);
 		if (g_hMaskBitmap) {
 			::SelectObject(g_hMaskDC, g_hMaskBitmap);
 			return true;
@@ -701,7 +791,7 @@ bool CreateMaskDC() {
 }
 
 bool CreateBorderMaskDC() {
-	bool result = CreateBitmapSurface(&g_hBorderMaskDC, &g_hBorderMaskBitmap, (LPVOID*)&g_pBorderMaskBitmapBits, CDG_BITMAP_WIDTH, CDG_BITMAP_HEIGHT, 1);
+	bool result = CreateBitmapSurface(&g_hBorderMaskDC, &g_hBorderMaskBitmap, (LPVOID*)&g_pBorderMaskBitmapBits, CDG_MAXIMUM_BITMAP_WIDTH, CDG_MAXIMUM_BITMAP_HEIGHT, 1);
 	RGBQUAD monoPalette[] = {
 		{255,255,255,0},
 		{0,0,0,0}
@@ -815,9 +905,10 @@ void ClearCDGBuffer() {
 	g_logicalPalette[0].rgbBlue = g_effectivePalette[0].rgbBlue = g_nDefaultBackgroundColor & 0x00ff;
 	g_logicalPalette[0].rgbGreen = g_effectivePalette[0].rgbGreen = (g_nDefaultBackgroundColor >> 8) & 0x00ff;
 	g_logicalPalette[0].rgbRed = g_effectivePalette[0].rgbRed = (g_nDefaultBackgroundColor >> 16) & 0x00ff;
-	::ZeroMemory(g_pForegroundBitmapBits, (((CDG_BITMAP_WIDTH) * (CDG_BITMAP_HEIGHT)) / 2));
+	::ZeroMemory(g_pScaledForegroundBitmapBits[0], (((CDG_BITMAP_WIDTH) * (CDG_BITMAP_HEIGHT)) / 2));
 	::ZeroMemory(g_pScrollBufferBitmapBits, (((CDG_BITMAP_WIDTH) * (CDG_BITMAP_HEIGHT)) / 2));
-	::SetDIBColorTable(g_hForegroundDC, 0, 16, g_logicalPalette);
+	for(int f=0;f<SUPPORTED_SCALING_LEVELS;++f)
+		::SetDIBColorTable(g_hScaledForegroundDCs[f], 0, 16, g_logicalPalette);
 	SetBackgroundColorIndex(0);
 	g_bShowLogo = true;
 	::RedrawWindow(g_hForegroundWindow, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
@@ -855,7 +946,7 @@ LRESULT CALLBACK CdgProWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lPara
 }
 
 bool CreateTransparentBrush() {
-	g_hTransparentBrush = ::CreateSolidBrush(DEFAULT_TRANSPARENT_COLOR);
+	g_hTransparentBrush = ::CreateSolidBrush(DEFAULT_TRANSPARENT_COLORREF);
 	return !!g_hTransparentBrush;
 }
 
@@ -879,19 +970,21 @@ int init() {
 			if (RegisterBackgroundWindowClass())
 				if (RegisterForegroundWindowClass())
 					if (CreateBackgroundWindow())
-						if (CreateForegroundWindow())
+						if (CreateForegroundWindow()) {
+							::SetStretchBltMode(g_hForegroundWindowDC, COLORONCOLOR);
 							if (CreateBackgroundDC())
-								if (CreateForegroundDC())
+								if (CreateForegroundDCs())
 									if (CreateMaskDC())
 										if (CreateBorderMaskDC())
 											if (CreateScrollBufferDC())
 												if (CreateMaskedForegroundDC()) {
-													if (::SetLayeredWindowAttributes(g_hForegroundWindow, DEFAULT_TRANSPARENT_COLOR, 255, LWA_COLORKEY))
+													if (::SetLayeredWindowAttributes(g_hForegroundWindow, DEFAULT_TRANSPARENT_COLORREF, 255, LWA_COLORKEY))
 														if (::SetLayeredWindowAttributes(g_hBackgroundWindow, 0, g_nBackgroundOpacity, LWA_ALPHA))
 															if (StartCDGProcessingThread()) {
 																ClearCDGBuffer();
 															}
 												}
+						}
 
 	g_pOriginalWndProc = (WNDPROC)SetWindowLong(plugin.hwndParent, GWL_WNDPROC, (LONG)CdgProWndProc);
 	return 0;
@@ -928,11 +1021,13 @@ void quit() {
 	CloseWindow(g_hForegroundWindow, g_hForegroundWindowDC);
 	CloseWindow(g_hBackgroundWindow, g_hBackgroundWindowDC);
 	DeleteDC(g_hBackgroundDC, g_hBackgroundBitmap);
-	DeleteDC(g_hForegroundDC, g_hForegroundBitmap);
 	DeleteDC(g_hMaskDC, g_hMaskBitmap);
 	DeleteDC(g_hBorderMaskDC, g_hBorderMaskBitmap);
 	DeleteDC(g_hMaskedForegroundDC, g_hMaskedForegroundBitmap);
 	DeleteDC(g_hScrollBufferDC, g_hScrollBufferBitmap);
+	DeleteDC(g_hScrollBufferDC, g_hScrollBufferBitmap);
+	for(int f=0;f<SUPPORTED_SCALING_LEVELS;++f)
+		DeleteDC(g_hScaledForegroundDCs[f], g_hScaledForegroundBitmaps[f]);
 
 	if (g_hTransparentBrush)
 		::DeleteObject(g_hTransparentBrush);
