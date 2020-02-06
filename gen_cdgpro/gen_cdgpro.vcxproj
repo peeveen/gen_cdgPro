@@ -188,7 +188,6 @@
     <ClCompile Include="CDGReader.cpp" />
     <ClCompile Include="CDGRender.cpp" />
     <ClCompile Include="CDGWindows.cpp" />
-    <ClCompile Include="dllmain.cpp" />
     <ClCompile Include="gen_cdgpro.cpp" />
     <ClCompile Include="CDGInstructionHandlers.cpp" />
     <ClCompile Include="stdafx.cpp">

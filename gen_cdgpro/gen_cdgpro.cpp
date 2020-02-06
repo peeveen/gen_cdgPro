@@ -59,7 +59,6 @@ DWORD WINAPI StartSongThread(LPVOID pParams) {
 void ClearCDGBuffer() {
 	ResetPalette();
 	::ZeroMemory(g_pScaledForegroundBitmapBits[0], (((CDG_BITMAP_WIDTH) * (CDG_BITMAP_HEIGHT)) / 2));
-	::ZeroMemory(g_pScrollBufferBitmapBits, (((CDG_BITMAP_WIDTH) * (CDG_BITMAP_HEIGHT)) / 2));
 	SetBackgroundColorIndex(0);
 	g_bShowLogo = true;
 	::RedrawWindow(g_hForegroundWindow, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
