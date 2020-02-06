@@ -74,6 +74,7 @@ BYTE ProcessCDGPackets(DWORD songPosition) {
 				break;
 		}
 	}
+
 	return result;
 }
 

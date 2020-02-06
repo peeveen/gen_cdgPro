@@ -4,7 +4,6 @@
 #include "CDGPrefs.h"
 #include "CDGBitmaps.h"
 #include "CDGBackgroundFunctions.h"
-#include "CDGReader.h"
 #include "CDGRender.h"
 #include "CDGPalette.h"
 
@@ -129,8 +128,8 @@ BYTE Scroll(BYTE color, BYTE hScroll, BYTE hScrollOffset, BYTE vScroll, BYTE vSc
 	// This should be faster than BitBlt
 	memcpy(g_pScrollBufferBitmapBits, g_pScaledForegroundBitmapBits[0], (CDG_BITMAP_WIDTH * CDG_BITMAP_HEIGHT) / 2);
 	HDC hForegroundDC = g_hScaledForegroundDCs[0];
-	::BitBlt(hForegroundDC, nHScrollPixels, nVScrollPixels, CDG_BITMAP_WIDTH, CDG_BITMAP_HEIGHT, g_hScrollBufferDC, 0, 0, SRCCOPY);
 	DWORD rop = SRCCOPY;
+	::BitBlt(hForegroundDC, nHScrollPixels, nVScrollPixels, CDG_BITMAP_WIDTH, CDG_BITMAP_HEIGHT, g_hScrollBufferDC, 0, 0, rop);
 	HBRUSH oldBrush = NULL;
 	HBRUSH solidBrush = NULL;
 	if (!copy) {

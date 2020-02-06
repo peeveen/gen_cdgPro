@@ -16,31 +16,24 @@ void SetFullScreen(bool fullscreen)
 	if (g_bFullScreen != fullscreen) {
 		if (!g_bFullScreen)
 			::GetWindowRect(g_hForegroundWindow, &g_lastSize);
-
 		g_bFullScreen = fullscreen;
-
 		if (g_bFullScreen)
 		{
-			// Set new window style and size.
+			// Remove frame from window
 			DWORD currentStyle = ::GetWindowLong(g_hForegroundWindow, GWL_STYLE);
 			::SetWindowLong(g_hForegroundWindow, GWL_STYLE, currentStyle & ~WS_THICKFRAME);
-
-			// On expand, if we're given a window_rect, grow to it, otherwise do not resize.
-			MONITORINFO monitor_info;
-			monitor_info.cbSize = sizeof(monitor_info);
-			::GetMonitorInfo(MonitorFromWindow(g_hForegroundWindow, MONITOR_DEFAULTTONEAREST), &monitor_info);
-			RECT window_rect(monitor_info.rcMonitor);
+			// Figure out what screen we're on, and what size it is.
+			MONITORINFO monitorInfo;
+			monitorInfo.cbSize = sizeof(monitorInfo);
+			::GetMonitorInfo(MonitorFromWindow(g_hForegroundWindow, MONITOR_DEFAULTTONEAREST), &monitorInfo);
+			RECT window_rect(monitorInfo.rcMonitor);
 			::SetWindowPos(g_hForegroundWindow, NULL, window_rect.left, window_rect.top, window_rect.right - window_rect.left, window_rect.bottom - window_rect.top, SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
 		}
 		else
 		{
-			// Reset original window style and size.  The multiple window size/moves
-			// here are ugly, but if SetWindowPos() doesn't redraw, the taskbar won't be
-			// repainted.  Better-looking methods welcome.
+			// Reset original window style and size.
 			DWORD currentStyle = ::GetWindowLong(g_hForegroundWindow, GWL_STYLE);
 			::SetWindowLong(g_hForegroundWindow, GWL_STYLE, currentStyle | WS_THICKFRAME);
-
-			// On restore, resize to the previous saved rect size.
 			RECT new_rect(g_lastSize);
 			::SetWindowPos(g_hForegroundWindow, NULL, new_rect.left, new_rect.top, new_rect.right - new_rect.left, new_rect.bottom - new_rect.top, SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
 		}
@@ -124,15 +117,11 @@ bool CreateRightClickMenu() {
 		HBITMAP checked = (HBITMAP)::LoadImage(g_hInstance, MAKEINTRESOURCE(IDB_CHECKED), IMAGE_BITMAP, 16, 16, LR_MONOCHROME | LR_LOADTRANSPARENT);
 		HBITMAP unchecked = (HBITMAP)::LoadImage(g_hInstance, MAKEINTRESOURCE(IDB_UNCHECKED), IMAGE_BITMAP, 16, 16, LR_MONOCHROME | LR_LOADTRANSPARENT);
 		::SetMenuItemBitmaps(g_hMenu, MENUITEM_TOPMOST_ID, MF_BYCOMMAND, unchecked, checked);
-		if (::AppendMenu(g_hMenu, MF_UNCHECKED | MF_ENABLED | MF_STRING, MENUITEM_TOPMOST_ID, L"Always On Top")) {
-			if (::AppendMenu(g_hMenu, MF_UNCHECKED | MF_ENABLED | MF_STRING, MENUITEM_FULLSCREEN_ID, L"Full Screen")) {
-				if (::AppendMenu(g_hMenu, MF_SEPARATOR, 0, NULL)) {
-					if (::AppendMenu(g_hMenu, MF_ENABLED | MF_STRING, MENUITEM_ABOUT_ID, L"About")) {
-						return true;
-					}
-				}
-			}
-		}
+		::AppendMenu(g_hMenu, MF_UNCHECKED | MF_ENABLED | MF_STRING, MENUITEM_TOPMOST_ID, L"Always On Top");
+		::AppendMenu(g_hMenu, MF_UNCHECKED | MF_ENABLED | MF_STRING, MENUITEM_FULLSCREEN_ID, L"Full Screen");
+		::AppendMenu(g_hMenu, MF_SEPARATOR, 0, NULL);
+		::AppendMenu(g_hMenu, MF_ENABLED | MF_STRING, MENUITEM_ABOUT_ID, L"About");
+		return true;
 	}
 	return false;
 }
