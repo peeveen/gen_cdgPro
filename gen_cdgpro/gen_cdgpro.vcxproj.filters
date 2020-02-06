@@ -77,9 +77,6 @@
     <ClCompile Include="CDGInstructionHandlers.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="CDGGlobals.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="CDGPrefs.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>

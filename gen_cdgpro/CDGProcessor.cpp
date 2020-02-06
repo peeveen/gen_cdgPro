@@ -1,22 +1,21 @@
 #include "stdafx.h"
-#include "CDGDefs.h"
 #include "CDGGlobals.h"
 #include "CDGPrefs.h"
 #include "CDGReader.h"
 #include "CDGWindows.h"
+#include "CDGPalette.h"
 #include "CDGInstructionHandlers.h"
+#include "CDGBackgroundFunctions.h"
 
-// Handle and ID of the processing thread.
+// Handle of the processing thread.
 HANDLE g_hCDGProcessingThread = NULL;
-DWORD g_nCDGProcessingThreadID = 0;
 // Cross thread communication events.
 HANDLE g_hStopCDGProcessingEvent = NULL;
 HANDLE g_hStoppedCDGProcessingEvent = NULL;
 HANDLE g_hStopCDGThreadEvent = NULL;
 HANDLE g_hSongLoadedEvent = NULL;
-
 // Current CDG instruction index.
-int g_nCDGPC = 0;
+DWORD g_nCDGPC = 0;
 
 BYTE ProcessCDGPackets(long songPosition) {
 	BYTE result = 0;
@@ -26,7 +25,7 @@ BYTE ProcessCDGPackets(long songPosition) {
 		// Account for WinAmp timing drift bug (see comment about time scaler)
 		// and general lag (see comment about hysteresis).
 		songPosition = (int)(songPosition * g_nTimeScaler) + HYSTERESIS_MS;
-		int cdgFrameIndex = (int)(songPosition / CDG_FRAME_DURATION_MS);
+		DWORD cdgFrameIndex = (DWORD)(songPosition / CDG_FRAME_DURATION_MS);
 		if (cdgFrameIndex > g_nCDGPackets)
 			cdgFrameIndex = g_nCDGPackets;
 		// If the target frame is BEFORE the current CDGPC, the user has
@@ -77,20 +76,22 @@ BYTE ProcessCDGPackets(long songPosition) {
 	return result;
 }
 
+void ResetProcessor() {
+	g_nCDGPC = 0;
+	ResetPalette();
+	SetBackgroundColorIndex(0);
+}
+
 DWORD WINAPI CDGProcessor(LPVOID pParams) {
 	HANDLE waitHandles[] = { g_hStopCDGProcessingEvent, g_hStopCDGThreadEvent,g_hSongLoadedEvent };
 	for (;;) {
+		ResetProcessor();
 		int waitResult = ::WaitForMultipleObjects(2, waitHandles + 1, FALSE, INFINITE);
 		if (waitResult == 0) {
 			break;
 		}
-		g_nCDGPC = 0;
 		for (;;) {
 			waitResult = ::WaitForMultipleObjects(2, waitHandles, FALSE, SCREEN_REFRESH_MS);
-			if (waitResult == 0)
-				break;
-			if (waitResult == 1)
-				return 0;
 			if (waitResult == WAIT_TIMEOUT) {
 				if (g_nCDGPC < g_nCDGPackets) {
 					byte result = ProcessCDGPackets(::SendMessage(g_hWinampWindow, WM_WA_IPC, 0, IPC_GETOUTPUTTIME));
@@ -100,6 +101,8 @@ DWORD WINAPI CDGProcessor(LPVOID pParams) {
 						::RedrawWindow(g_hBackgroundWindow, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
 				}
 			}
+			else
+				break;
 		}
 		::SetEvent(g_hStoppedCDGProcessingEvent);
 	}
@@ -107,11 +110,12 @@ DWORD WINAPI CDGProcessor(LPVOID pParams) {
 }
 
 bool StartCDGProcessor() {
+	ResetProcessor();
 	g_hStopCDGProcessingEvent = ::CreateEvent(NULL, TRUE, FALSE, NULL);
 	g_hStoppedCDGProcessingEvent = ::CreateEvent(NULL, FALSE, TRUE, NULL);
 	g_hStopCDGThreadEvent = ::CreateEvent(NULL, TRUE, FALSE, NULL);
 	g_hSongLoadedEvent = ::CreateEvent(NULL, FALSE, FALSE, NULL);
-	g_hCDGProcessingThread = ::CreateThread(NULL, 0, CDGProcessor, NULL, 0, &g_nCDGProcessingThreadID);
+	g_hCDGProcessingThread = ::CreateThread(NULL, 0, CDGProcessor, NULL, 0, NULL);
 	return !!g_hCDGProcessingThread;
 }
 

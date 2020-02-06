@@ -2,7 +2,6 @@
 #include "stdafx.h"
 
 void ResetPalette();
-void BuildEffectivePalette();
+void SetPalette(RGBQUAD* pRGBQuads, int nStartIndex, int nCount);
 
-extern RGBQUAD g_logicalPalette[16];
-extern RGBQUAD g_effectivePalette[16];
+extern RGBQUAD g_palette[16];

@@ -1,18 +1,11 @@
 #include "stdafx.h"
-#include <wchar.h>
-#include <windows.h>
-#include <windowsx.h>
-#include <objidl.h>
-#include <stdlib.h>
-#include <math.h>
 #include <malloc.h>
+#include <objidl.h>
 #include <gdiplus.h>
-#include <gdipluscolor.h>
 #pragma comment (lib,"Gdiplus.lib")
 using namespace Gdiplus;
 #include "resource.h"
 
-#include "CDGDefs.h"
 #include "CDGGlobals.h"
 #include "CDGPrefs.h"
 #include "CDGBackgroundFunctions.h"
@@ -27,6 +20,11 @@ using namespace Gdiplus;
 int init(void);
 void config(void);
 void quit(void);
+
+// The instance handle of this DLL.
+HINSTANCE g_hInstance = NULL;
+// Handle to the Winamp window.
+HWND g_hWinampWindow = NULL;
 
 // Original WndProc that we have to swap back in at the end of proceedings.
 WNDPROC g_pOriginalWndProc;
@@ -46,28 +44,15 @@ DWORD WINAPI StartSongThread(LPVOID pParams) {
 	::WaitForSingleObject(g_hStoppedCDGProcessingEvent, INFINITE);
 	::ResetEvent(g_hStopCDGProcessingEvent);
 	const WCHAR* fileBeingPlayed = (const WCHAR*)pParams;
-	clearExistingCDGData();
 	if (readCDGData(fileBeingPlayed)) {
-		SetBackgroundColorIndex(0);
-		g_bShowLogo = false;
 		::SetEvent(g_hSongLoadedEvent);
 	}
 	free(pParams);
 	return 0;
 }
 
-void ClearCDGBuffer() {
-	ResetPalette();
-	::ZeroMemory(g_pScaledForegroundBitmapBits[0], (((CDG_BITMAP_WIDTH) * (CDG_BITMAP_HEIGHT)) / 2));
-	SetBackgroundColorIndex(0);
-	g_bShowLogo = true;
-	::RedrawWindow(g_hForegroundWindow, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
-	::RedrawWindow(g_hBackgroundWindow, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
-}
-
 LRESULT CALLBACK CdgProWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
-	DWORD nStartSongThreadID;
 	switch (uMsg) {
 	case WM_WA_IPC:
 		switch (lParam) {
@@ -77,15 +62,19 @@ LRESULT CALLBACK CdgProWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lPara
 			WCHAR* pszSongTitleCopy = (WCHAR*)malloc(sizeof(WCHAR) * nStrLen);
 			if (pszSongTitleCopy) {
 				wcscpy_s(pszSongTitleCopy, nStrLen, pszSongTitle);
-				::CreateThread(NULL, 0, StartSongThread, (LPVOID)pszSongTitleCopy, 0, &nStartSongThreadID);
+				::CreateThread(NULL, 0, StartSongThread, (LPVOID)pszSongTitleCopy, 0, NULL);
 			}
 			break;
 		}
 		case IPC_CB_MISC:
 			if (wParam == IPC_CB_MISC_STATUS) {
 				LRESULT isPlayingResult = ::SendMessage(plugin.hwndParent, WM_WA_IPC, 0, IPC_ISPLAYING);
-				if (!isPlayingResult)
-					::ClearCDGBuffer();
+				if (!isPlayingResult) {
+					ResetProcessor();
+					::ZeroMemory(g_pScaledForegroundBitmapBits[0], (CDG_BITMAP_WIDTH * CDG_BITMAP_HEIGHT) / 2);
+					::RedrawWindow(g_hForegroundWindow, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
+					::RedrawWindow(g_hBackgroundWindow, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
+				}
 			}
 			break;
 		}
@@ -107,7 +96,6 @@ int init() {
 	CreateWindows();
 	CreateBitmaps();
 	StartCDGProcessor();
-	ClearCDGBuffer();
 
 	g_pOriginalWndProc = (WNDPROC)SetWindowLong(plugin.hwndParent, GWL_WNDPROC, (LONG)CdgProWndProc);
 	return 0;

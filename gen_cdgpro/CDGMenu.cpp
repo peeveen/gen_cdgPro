@@ -1,44 +1,11 @@
 #include "stdafx.h"
 #include <windowsx.h>
-#include "CDGDefs.h"
 #include "CDGGlobals.h"
 #include "CDGWindows.h"
 #include "resource.h"
 
-// Window state
-bool g_bFullScreen = false;
-RECT g_lastSize;
 // The context menu
 HMENU g_hMenu = NULL;
-
-void SetFullScreen(bool fullscreen)
-{
-	if (g_bFullScreen != fullscreen) {
-		if (!g_bFullScreen)
-			::GetWindowRect(g_hForegroundWindow, &g_lastSize);
-		g_bFullScreen = fullscreen;
-		if (g_bFullScreen)
-		{
-			// Remove frame from window
-			DWORD currentStyle = ::GetWindowLong(g_hForegroundWindow, GWL_STYLE);
-			::SetWindowLong(g_hForegroundWindow, GWL_STYLE, currentStyle & ~WS_THICKFRAME);
-			// Figure out what screen we're on, and what size it is.
-			MONITORINFO monitorInfo;
-			monitorInfo.cbSize = sizeof(monitorInfo);
-			::GetMonitorInfo(MonitorFromWindow(g_hForegroundWindow, MONITOR_DEFAULTTONEAREST), &monitorInfo);
-			RECT window_rect(monitorInfo.rcMonitor);
-			::SetWindowPos(g_hForegroundWindow, NULL, window_rect.left, window_rect.top, window_rect.right - window_rect.left, window_rect.bottom - window_rect.top, SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
-		}
-		else
-		{
-			// Reset original window style and size.
-			DWORD currentStyle = ::GetWindowLong(g_hForegroundWindow, GWL_STYLE);
-			::SetWindowLong(g_hForegroundWindow, GWL_STYLE, currentStyle | WS_THICKFRAME);
-			RECT new_rect(g_lastSize);
-			::SetWindowPos(g_hForegroundWindow, NULL, new_rect.left, new_rect.top, new_rect.right - new_rect.left, new_rect.bottom - new_rect.top, SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
-		}
-	}
-}
 
 INT_PTR AboutDialogProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 	switch (msg)
@@ -69,6 +36,20 @@ void ShowAboutDialog() {
 	::DialogBox(g_hInstance, MAKEINTRESOURCE(IDD_ABOUTDIALOG), g_hForegroundWindow, (DLGPROC)AboutDialogProc);
 }
 
+void ToggleFullScreen(MENUITEMINFO* pMenuItemInfo, bool currentFullScreenState) {
+	pMenuItemInfo->fState = currentFullScreenState ? MFS_UNCHECKED : MFS_CHECKED;
+	::SetMenuItemInfo(g_hMenu, MENUITEM_FULLSCREEN_ID, FALSE, pMenuItemInfo);
+	SetFullScreen(!currentFullScreenState);
+}
+
+void ToggleTopmost(MENUITEMINFO* pMenuItemInfo, DWORD currentExStyle) {
+	bool currentlyTopmost = !!(currentExStyle & WS_EX_TOPMOST);
+	pMenuItemInfo->fState = currentlyTopmost ? MFS_UNCHECKED : MFS_CHECKED;
+	::SetWindowLong(g_hForegroundWindow, GWL_EXSTYLE, currentExStyle ^ WS_EX_TOPMOST);
+	::SetMenuItemInfo(g_hMenu, MENUITEM_TOPMOST_ID, FALSE, pMenuItemInfo);
+	::SetWindowPos(g_hForegroundWindow, currentlyTopmost?HWND_NOTOPMOST:HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+}
+
 void ShowMenu(int xPos,int yPos) {
 	MENUITEMINFO menuItemInfo;
 	::ZeroMemory(&menuItemInfo, sizeof(MENUITEMINFO));
@@ -76,38 +57,16 @@ void ShowMenu(int xPos,int yPos) {
 	menuItemInfo.fMask = MIIM_STATE;
 	int command = ::TrackPopupMenu(g_hMenu, TPM_RETURNCMD, xPos, yPos, 0, g_hForegroundWindow, NULL);
 	switch (command) {
-	case MENUITEM_TOPMOST_ID: {
-		DWORD currentExStyle = ::GetWindowLong(g_hForegroundWindow, GWL_EXSTYLE);
-		if (currentExStyle & WS_EX_TOPMOST) {
-			menuItemInfo.fState = MFS_UNCHECKED;
-			::SetWindowLong(g_hForegroundWindow, GWL_EXSTYLE, currentExStyle &= ~WS_EX_TOPMOST);
-			::SetMenuItemInfo(g_hMenu, MENUITEM_TOPMOST_ID, FALSE, &menuItemInfo);
-			::SetWindowPos(g_hForegroundWindow, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
-		}
-		else {
-			menuItemInfo.fState = MFS_CHECKED;
-			::SetWindowLong(g_hForegroundWindow, GWL_EXSTYLE, currentExStyle | WS_EX_TOPMOST);
-			::SetMenuItemInfo(g_hMenu, MENUITEM_TOPMOST_ID, FALSE, &menuItemInfo);
-			::SetWindowPos(g_hForegroundWindow, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
-		}
-		break;
-	}
-	case MENUITEM_FULLSCREEN_ID:
-		if (g_bFullScreen) {
-			menuItemInfo.fState = MFS_UNCHECKED;
-			::SetMenuItemInfo(g_hMenu, MENUITEM_FULLSCREEN_ID, FALSE, &menuItemInfo);
-			SetFullScreen(false);
-		}
-		else {
-			menuItemInfo.fState = MFS_CHECKED;
-			::SetMenuItemInfo(g_hMenu, MENUITEM_FULLSCREEN_ID, FALSE, &menuItemInfo);
-			SetFullScreen(true);
-		}
-		break;
-	case MENUITEM_ABOUT_ID:
-		ShowAboutDialog();
-	default:
-		break;
+		case MENUITEM_TOPMOST_ID:
+			ToggleTopmost(&menuItemInfo, ::GetWindowLong(g_hForegroundWindow, GWL_EXSTYLE));
+			break;
+		case MENUITEM_FULLSCREEN_ID:
+			ToggleFullScreen(&menuItemInfo,IsFullScreen());
+			break;
+		case MENUITEM_ABOUT_ID:
+			ShowAboutDialog();
+		default:
+			break;
 	}
 }
 

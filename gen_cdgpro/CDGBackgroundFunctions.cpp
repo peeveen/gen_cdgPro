@@ -1,6 +1,4 @@
 #include "stdafx.h"
-#include "CDGDefs.h"
-#include "CDGGlobals.h"
 #include "CDGPrefs.h"
 #include "CDGBitmaps.h"
 #include "CDGPalette.h"
@@ -12,9 +10,9 @@ BYTE g_nCurrentTransparentIndex = 0;
 void SetBackgroundColorIndex(BYTE index) {
 	g_nCurrentTransparentIndex = index;
 	// RGB macro, for some reason, encodes as BGR. Not so handy for direct 32-bit bitmap writing.
-	COLORREF backgroundColorReversed = RGB(g_effectivePalette[index].rgbBlue, g_effectivePalette[index].rgbGreen, g_effectivePalette[index].rgbRed);
+	COLORREF backgroundColorReversed = RGB(g_palette[index].rgbBlue, g_palette[index].rgbGreen, g_palette[index].rgbRed);
 	*g_pBackgroundBitmapBits = backgroundColorReversed;
-	COLORREF backgroundColor = RGB(g_effectivePalette[index].rgbRed, g_effectivePalette[index].rgbGreen, g_effectivePalette[index].rgbBlue);
+	COLORREF backgroundColor = RGB(g_palette[index].rgbRed, g_palette[index].rgbGreen, g_palette[index].rgbBlue);
 	for (int f = 0; f < SUPPORTED_SCALING_LEVELS; ++f)
 		::SetBkColor(g_hScaledForegroundDCs[f], backgroundColor);
 }

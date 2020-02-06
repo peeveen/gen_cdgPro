@@ -4,7 +4,7 @@
 
 // Current CDG data.
 extern CDGPacket* g_pCDGData;
-extern int g_nCDGPackets;
+extern DWORD g_nCDGPackets;
 
 bool readCDGData(const WCHAR* pFileBeingPlayed);
 void clearExistingCDGData();

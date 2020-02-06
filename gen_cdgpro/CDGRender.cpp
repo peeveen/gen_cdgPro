@@ -1,9 +1,9 @@
 #include "stdafx.h"
-#include "CDGDefs.h"
 #include "CDGGlobals.h"
 #include "CDGPrefs.h"
 #include "CDGWindows.h"
 #include "CDGBitmaps.h"
+#include "CDGProcessor.h"
 #include <objidl.h>
 #include <stdlib.h>
 #include <gdiplus.h>
@@ -14,7 +14,6 @@ using namespace Gdiplus;
 // Logo image
 Image* g_pLogoImage = NULL;
 SIZE g_logoSize;
-bool g_bShowLogo = true;
 
 // Canvas pixel offsets for scrolling
 int g_nCanvasXOffset = 0;
@@ -109,7 +108,7 @@ void DrawForeground() {
 				::BitBlt(g_hBorderMaskDC, f, g, CDG_BITMAP_WIDTH * nScaling, CDG_BITMAP_HEIGHT * nScaling, g_hMaskDC, 0, 0, SRCPAINT);
 	::MaskBlt(g_hMaskedForegroundDC, 0, 0, CDG_BITMAP_WIDTH * nScaling, CDG_BITMAP_HEIGHT * nScaling, hSourceDC, 0, 0, g_hBorderMaskBitmap, 0, 0, MAKEROP4(SRCCOPY, PATCOPY));
 	::StretchBlt(g_hForegroundWindowDC, 0, 0, r.right - r.left, r.bottom - r.top, g_hMaskedForegroundDC, (CDG_CANVAS_X + g_nCanvasXOffset) * nScaling, (CDG_CANVAS_Y + g_nCanvasYOffset) * nScaling, CDG_CANVAS_WIDTH * nScaling, CDG_CANVAS_HEIGHT * nScaling, SRCCOPY);
-	if (g_pLogoImage && g_bShowLogo) {
+	if (g_pLogoImage && !g_nCDGPC) {
 		RECT r;
 		::GetClientRect(g_hForegroundWindow, &r);
 		int windowWidth = r.right - r.left;

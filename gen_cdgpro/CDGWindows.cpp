@@ -1,6 +1,5 @@
 #include "stdafx.h"
 #include <windowsx.h>
-#include "CDGDefs.h"
 #include "CDGGlobals.h"
 #include "CDGPrefs.h"
 #include "CDGMenu.h"
@@ -18,6 +17,41 @@ HWND g_hForegroundWindow = NULL;
 // The window (and it's DC) containing the (optionally transparent) background.
 HDC g_hBackgroundWindowDC = NULL;
 HWND g_hBackgroundWindow = NULL;
+// Window size to restore to from fullscreen. If not currently in fullscreen mode, this is zero size.
+RECT g_lastSize = { 0,0,0,0 };
+
+bool IsFullScreen() {
+	return g_lastSize.right - g_lastSize.left > 0;
+}
+
+void SetFullScreen(bool fullscreen)
+{
+	bool currentlyFullScreen = IsFullScreen();
+	if (currentlyFullScreen != fullscreen) {
+		if (fullscreen)
+		{
+			::GetWindowRect(g_hForegroundWindow, &g_lastSize);
+			// Remove frame from window
+			DWORD currentStyle = ::GetWindowLong(g_hForegroundWindow, GWL_STYLE);
+			::SetWindowLong(g_hForegroundWindow, GWL_STYLE, currentStyle & ~WS_THICKFRAME);
+			// Figure out what screen we're on, and what size it is.
+			MONITORINFO monitorInfo;
+			monitorInfo.cbSize = sizeof(monitorInfo);
+			::GetMonitorInfo(MonitorFromWindow(g_hForegroundWindow, MONITOR_DEFAULTTONEAREST), &monitorInfo);
+			RECT window_rect(monitorInfo.rcMonitor);
+			::SetWindowPos(g_hForegroundWindow, NULL, window_rect.left, window_rect.top, window_rect.right - window_rect.left, window_rect.bottom - window_rect.top, SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+		}
+		else
+		{
+			// Reset original window style and size.
+			DWORD currentStyle = ::GetWindowLong(g_hForegroundWindow, GWL_STYLE);
+			::SetWindowLong(g_hForegroundWindow, GWL_STYLE, currentStyle | WS_THICKFRAME);
+			RECT new_rect(g_lastSize);
+			::SetWindowPos(g_hForegroundWindow, NULL, new_rect.left, new_rect.top, new_rect.right - new_rect.left, new_rect.bottom - new_rect.top, SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+			g_lastSize = { 0,0,0,0 };
+		}
+	}
+}
 
 LRESULT CALLBACK ForegroundWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {

@@ -1,5 +1,4 @@
 #include "stdafx.h"
-#include "CDGDefs.h"
 #include "CDGGlobals.h"
 #include "CDGPrefs.h"
 #include "CDGBitmaps.h"
@@ -98,7 +97,8 @@ BYTE TileBlock(BYTE* pData, bool isXor) {
 }
 
 BYTE LoadColorTable(BYTE* pData, bool highTable) {
-	int nPaletteStartIndex = (highTable ? 8 : 0);
+	int nPaletteStartIndex = highTable ? 8 : 0;
+	RGBQUAD rgbQuads[8];
 	for (int f = 0; f < 8; ++f) {
 		BYTE colorByte1 = pData[f * 2] & 0x3F;
 		BYTE colorByte2 = pData[(f * 2) + 1] & 0x3F;
@@ -110,13 +110,9 @@ BYTE LoadColorTable(BYTE* pData, bool highTable) {
 		red = (red * 17);
 		green = (green * 17);
 		blue = (blue * 17);
-		g_logicalPalette[f + nPaletteStartIndex] = { blue,green,red,0 };
+		rgbQuads[f] = { blue,green,red,0 };
 	}
-	BuildEffectivePalette();
-	for (int f = 0; f < SUPPORTED_SCALING_LEVELS; ++f)
-		::SetDIBColorTable(g_hScaledForegroundDCs[f], 0, 16, g_effectivePalette);
-	::SetDIBColorTable(g_hScrollBufferDC, 0, 16, g_effectivePalette);
-	SetBackgroundColorIndex(g_nCurrentTransparentIndex);
+	SetPalette(rgbQuads, nPaletteStartIndex, 8);
 	return 0x01 | (g_nCurrentTransparentIndex >= nPaletteStartIndex && g_nCurrentTransparentIndex < nPaletteStartIndex + 8 ? 0x02 : 0x00);
 }
 
@@ -133,7 +129,7 @@ BYTE Scroll(BYTE color, BYTE hScroll, BYTE hScrollOffset, BYTE vScroll, BYTE vSc
 	HBRUSH oldBrush = NULL;
 	HBRUSH solidBrush = NULL;
 	if (!copy) {
-		solidBrush = ::CreateSolidBrush(RGB(g_effectivePalette[color].rgbRed, g_effectivePalette[color].rgbGreen, g_effectivePalette[color].rgbBlue));
+		solidBrush = ::CreateSolidBrush(RGB(g_palette[color].rgbRed, g_palette[color].rgbGreen, g_palette[color].rgbBlue));
 		oldBrush = (HBRUSH)::SelectObject(hForegroundDC, solidBrush);
 		rop = PATCOPY;
 		if (color != g_nLastMemoryPresetColor)

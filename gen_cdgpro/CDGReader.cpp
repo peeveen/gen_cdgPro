@@ -1,13 +1,21 @@
 #include "stdafx.h"
 #include "zip.h"
-#include "CDGDefs.h"
 #include <malloc.h>
 
 // Current CDG data.
 CDGPacket* g_pCDGData = NULL;
-int g_nCDGPackets = 0;
+DWORD g_nCDGPackets = 0;
+
+void clearExistingCDGData() {
+	if (g_pCDGData) {
+		free(g_pCDGData);
+		g_pCDGData = NULL;
+	}
+	g_nCDGPackets = 0;
+}
 
 bool readCDGData(const WCHAR* pFileBeingPlayed) {
+	clearExistingCDGData();
 	bool result = false;
 	WCHAR pathBuffer[MAX_PATH + 1];
 	char zipEntryName[MAX_PATH + 1];
@@ -49,7 +57,7 @@ bool readCDGData(const WCHAR* pFileBeingPlayed) {
 							if (!zip_stat_index(pZip, nZipEntries, ZIP_FL_UNCHANGED, &fileStat)) {
 								zip_file_t* pCDGFile = zip_fopen_index(pZip, nZipEntries, ZIP_FL_UNCHANGED);
 								if (pCDGFile) {
-									g_nCDGPackets = (int)(fileStat.size / sizeof(CDGPacket));
+									g_nCDGPackets = (DWORD)(fileStat.size / sizeof(CDGPacket));
 									g_pCDGData = (CDGPacket*)malloc((size_t)g_nCDGPackets * sizeof(CDGPacket));
 									zip_fread(pCDGFile, g_pCDGData, fileStat.size);
 									zip_fclose(pCDGFile);
@@ -90,12 +98,4 @@ bool readCDGData(const WCHAR* pFileBeingPlayed) {
 		}
 	}
 	return result;
-}
-
-void clearExistingCDGData() {
-	if (g_pCDGData) {
-		free(g_pCDGData);
-		g_pCDGData = NULL;
-	}
-	g_nCDGPackets = 0;
 }

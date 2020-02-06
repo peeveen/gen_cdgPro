@@ -180,7 +180,6 @@
   <ItemGroup>
     <ClCompile Include="CDGBackgroundFunctions.cpp" />
     <ClCompile Include="CDGBitmaps.cpp" />
-    <ClCompile Include="CDGGlobals.cpp" />
     <ClCompile Include="CDGMenu.cpp" />
     <ClCompile Include="CDGPalette.cpp" />
     <ClCompile Include="CDGPrefs.cpp" />

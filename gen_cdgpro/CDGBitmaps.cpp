@@ -1,6 +1,4 @@
 #include "stdafx.h"
-#include "CDGDefs.h"
-#include "CDGGlobals.h"
 #include "CDGWindows.h"
 
 // Brush filled with the transparency color.
