@@ -106,15 +106,16 @@ DWORD WINAPI CDGProcessor(LPVOID pParams) {
 			if (waitResult == WAIT_TIMEOUT) {
 				if (g_nCDGPC < g_nCDGPackets) {
 					byte result = ProcessCDGPackets(::SendMessage(g_hWinampWindow, WM_WA_IPC, 0, IPC_GETOUTPUTTIME),&pInvalidRect);
-					if (result & 0x01)
+					if (result & 0x01) {
+						if (pInvalidRect) {
+							memcpy(&g_redrawRect, pInvalidRect, sizeof(RECT));
+							free(pInvalidRect);
+							pInvalidRect = NULL;
+						}
 						::RedrawWindow(g_hForegroundWindow, pInvalidRect, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
+					}
 					if (result & 0x02)
 						::RedrawWindow(g_hBackgroundWindow, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
-					if (pInvalidRect) {
-						memcpy(&g_redrawRect, pInvalidRect, sizeof(RECT));
-						free(pInvalidRect);
-						pInvalidRect = NULL;
-					}
 				}
 			}
 			else

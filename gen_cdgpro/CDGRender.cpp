@@ -95,12 +95,21 @@ void DrawBackground() {
 
 void DrawForeground() {
 	RECT r;
+	static RECT cdgDisplayRect = { 0,0,CDG_WIDTH,CDG_HEIGHT };
 	::GetClientRect(g_hForegroundWindow, &r);
 	HDC hSourceDC = g_hScaledForegroundDCs[0];
 	RECT invalidRect;
 	memcpy(&invalidRect, &g_redrawRect, sizeof(RECT));
-	::ZeroMemory(&g_redrawRect, sizeof(RECT));
 	int nScaling = 1;
+	if (g_nSmoothingPasses) {
+		// The smoothing algorithms have to operate on adjacent pixels, so we will have to include
+		// an extra pixel on each side of the invalid rectangle. Also, since the algorithm jumps
+		// two pixel each time on the horizontal axis, we will have to adjust for another extra
+		// pixel horizontally otherwise the algorithm will miss a pixel if the boundary is on an
+		// odd-numbered column. It's a tiny bit suboptimal, but we'll not kill ourselves over it.
+		::InflateRect(&invalidRect, 2, 1);
+		::IntersectRect(&invalidRect, &invalidRect, &cdgDisplayRect);
+	}
 	for (int f = 0; f < g_nSmoothingPasses && f < (SUPPORTED_SCALING_LEVELS - 1); ++f) {
 		int sourceWidth = CDG_BITMAP_WIDTH * nScaling;
 		Perform2xSmoothing(g_pScaledForegroundBitmapBits[f], g_pScaledForegroundBitmapBits[f + 1], &invalidRect, sourceWidth);
@@ -111,6 +120,7 @@ void DrawForeground() {
 		invalidRect.bottom *= 2;
 		hSourceDC = g_hScaledForegroundDCs[f + 1];
 	}
+	::ZeroMemory(&g_redrawRect, sizeof(RECT));
 	::BitBlt(g_hMaskDC, 0, 0, CDG_BITMAP_WIDTH * nScaling, CDG_BITMAP_HEIGHT * nScaling, hSourceDC, 0, 0, SRCCOPY);
 	::ZeroMemory(g_pBorderMaskBitmapBits, (CDG_MAXIMUM_BITMAP_WIDTH * CDG_MAXIMUM_BITMAP_HEIGHT) / 8);
 	for (int f = -nScaling; f <= nScaling; ++f)
