@@ -18,11 +18,11 @@ HANDLE g_hSongLoadedEvent = NULL;
 // Current CDG instruction index.
 int g_nCDGPC = 0;
 
-BYTE ProcessCDGPackets(DWORD songPosition) {
+BYTE ProcessCDGPackets(long songPosition) {
 	BYTE result = 0;
 	HANDLE waitHandles[] = { g_hStopCDGProcessingEvent, g_hStopCDGThreadEvent };
 	// Get current song position in milliseconds (see comment about rewind tolerance).
-	if (songPosition != -1) {
+	if (songPosition>=0) {
 		// Account for WinAmp timing drift bug (see comment about time scaler)
 		// and general lag (see comment about hysteresis).
 		songPosition = (int)(songPosition * g_nTimeScaler) + HYSTERESIS_MS;
@@ -74,7 +74,6 @@ BYTE ProcessCDGPackets(DWORD songPosition) {
 				break;
 		}
 	}
-
 	return result;
 }
 
