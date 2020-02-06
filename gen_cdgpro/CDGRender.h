@@ -2,7 +2,7 @@
 #include "stdafx.h"
 
 void DrawBackground();
-void DrawForeground();
+void DrawForeground(RECT *pInvalidWindowRect);
 void LoadLogo();
 void DestroyLogo();
 

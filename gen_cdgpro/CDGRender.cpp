@@ -93,42 +93,62 @@ void DrawBackground() {
 	::StretchBlt(g_hBackgroundWindowDC, 0, 0, r.right - r.left, r.bottom - r.top, g_hBackgroundDC, 0, 0, 1, 1, SRCCOPY);
 }
 
-void DrawForeground() {
-	RECT r;
-	static RECT cdgDisplayRect = { 0,0,CDG_WIDTH,CDG_HEIGHT };
-	::GetClientRect(g_hForegroundWindow, &r);
+void ScaleRect(RECT* pRect, int factor) {
+	pRect->left *= factor;
+	pRect->right *= factor;
+	pRect->top *= factor;
+	pRect->bottom *= factor;
+}
+
+void DrawForeground(RECT* pInvalidWindowRect) {
+	static RECT windowClientRect;
+	static RECT invalidCDGRect;
+	static RECT outlineRect;
+	RECT cdgDisplayRect = { 0,0,CDG_WIDTH,CDG_HEIGHT };
+	::GetClientRect(g_hForegroundWindow, &windowClientRect);
 	HDC hSourceDC = g_hScaledForegroundDCs[0];
-	RECT invalidRect;
-	memcpy(&invalidRect, &g_redrawRect, sizeof(RECT));
+	memcpy(&invalidCDGRect, &g_redrawRect, sizeof(RECT));
 	int nScaling = 1;
 	if (g_nSmoothingPasses) {
 		// The smoothing algorithms have to operate on adjacent pixels, so we will have to include
-		// an extra pixel on each side of the invalid rectangle. Also, since the algorithm jumps
-		// two pixel each time on the horizontal axis, we will have to adjust for another extra
-		// pixel horizontally otherwise the algorithm will miss a pixel if the boundary is on an
-		// odd-numbered column. It's a tiny bit suboptimal, but we'll not kill ourselves over it.
-		::InflateRect(&invalidRect, 2, 1);
-		::IntersectRect(&invalidRect, &invalidRect, &cdgDisplayRect);
+		// an extra pixel on each side of the invalid rectangle. Also, the algorithm works on two
+		// horizontal pixels at a time, and assumes even numbered start/ends ... it would be a more
+		// complex algorithm to cater for odd numbered boundaries for very little increase in speed.
+		// Therefore, we will keep the horizontal offsets even by adding yet ANOTHER pixel.
+		::InflateRect(&invalidCDGRect, 2, 1);
+		::IntersectRect(&invalidCDGRect, &invalidCDGRect, &cdgDisplayRect);
 	}
 	for (int f = 0; f < g_nSmoothingPasses && f < (SUPPORTED_SCALING_LEVELS - 1); ++f) {
 		int sourceWidth = CDG_BITMAP_WIDTH * nScaling;
-		Perform2xSmoothing(g_pScaledForegroundBitmapBits[f], g_pScaledForegroundBitmapBits[f + 1], &invalidRect, sourceWidth);
+		Perform2xSmoothing(g_pScaledForegroundBitmapBits[f], g_pScaledForegroundBitmapBits[f + 1], &invalidCDGRect, sourceWidth);
 		nScaling *= 2;
-		invalidRect.left *= 2;
-		invalidRect.right *= 2;
-		invalidRect.top *= 2;
-		invalidRect.bottom *= 2;
+		ScaleRect(&invalidCDGRect, 2);
+		ScaleRect(&cdgDisplayRect, 2);
 		hSourceDC = g_hScaledForegroundDCs[f + 1];
 	}
 	::ZeroMemory(&g_redrawRect, sizeof(RECT));
-	::BitBlt(g_hMaskDC, 0, 0, CDG_BITMAP_WIDTH * nScaling, CDG_BITMAP_HEIGHT * nScaling, hSourceDC, 0, 0, SRCCOPY);
+	::BitBlt(g_hMaskDC, invalidCDGRect.left, invalidCDGRect.top, invalidCDGRect.right- invalidCDGRect.left, invalidCDGRect.bottom- invalidCDGRect.top, hSourceDC, invalidCDGRect.left, invalidCDGRect.top, SRCCOPY);
 	::ZeroMemory(g_pBorderMaskBitmapBits, (CDG_MAXIMUM_BITMAP_WIDTH * CDG_MAXIMUM_BITMAP_HEIGHT) / 8);
+	// If drawing outlines, we will have to, possibly yet again, inflate the invalid rect to encompass the outline.
+	if (g_bDrawOutline) {
+		memcpy(&outlineRect, &invalidCDGRect, sizeof(RECT));
+		::InflateRect(&outlineRect, nScaling, nScaling);
+		::IntersectRect(&outlineRect, &outlineRect, &cdgDisplayRect);
+	}
 	for (int f = -nScaling; f <= nScaling; ++f)
 		for (int g = -nScaling; g <= nScaling; ++g)
 			if (g_bDrawOutline || (!f && !g))
-				::BitBlt(g_hBorderMaskDC, f, g, CDG_BITMAP_WIDTH * nScaling, CDG_BITMAP_HEIGHT * nScaling, g_hMaskDC, 0, 0, SRCPAINT);
-	::MaskBlt(g_hMaskedForegroundDC, 0, 0, CDG_BITMAP_WIDTH * nScaling, CDG_BITMAP_HEIGHT * nScaling, hSourceDC, 0, 0, g_hBorderMaskBitmap, 0, 0, MAKEROP4(SRCCOPY, PATCOPY));
-	::StretchBlt(g_hForegroundWindowDC, 0, 0, r.right - r.left, r.bottom - r.top, g_hMaskedForegroundDC, (CDG_CANVAS_X + g_nCanvasXOffset) * nScaling, (CDG_CANVAS_Y + g_nCanvasYOffset) * nScaling, CDG_CANVAS_WIDTH * nScaling, CDG_CANVAS_HEIGHT * nScaling, SRCCOPY);
+				::BitBlt(g_hBorderMaskDC, f + outlineRect.left, g + outlineRect.top, outlineRect.right - outlineRect.left, outlineRect.bottom - outlineRect.top, g_hMaskDC, outlineRect.left, outlineRect.top, SRCPAINT);
+	::MaskBlt(g_hMaskedForegroundDC, invalidCDGRect.left, invalidCDGRect.top, invalidCDGRect.right - invalidCDGRect.left, invalidCDGRect.bottom - invalidCDGRect.top, hSourceDC, invalidCDGRect.left, invalidCDGRect.top, g_hBorderMaskBitmap, invalidCDGRect.left, invalidCDGRect.top, MAKEROP4(SRCCOPY, PATCOPY));
+	double nInvalidRectXFactor = ((double)pInvalidWindowRect->left) / ((double)windowClientRect.right - windowClientRect.left);
+	double nInvalidRectYFactor = ((double)pInvalidWindowRect->top) / ((double)windowClientRect.bottom - windowClientRect.top);
+	double nInvalidRectWFactor = ((double)((double)pInvalidWindowRect->right- pInvalidWindowRect->left)) / ((double)windowClientRect.right - windowClientRect.left);
+	double nInvalidRectHFactor = ((double)((double)pInvalidWindowRect->bottom- pInvalidWindowRect->top)) / ((double)windowClientRect.bottom - windowClientRect.top);
+	int nCanvasSourceX = (int)(CDG_CANVAS_WIDTH * nScaling * nInvalidRectXFactor) + ((CDG_CANVAS_X + g_nCanvasXOffset) * nScaling);
+	int nCanvasSourceY = (int)(CDG_CANVAS_HEIGHT * nScaling * nInvalidRectYFactor) + ((CDG_CANVAS_Y + g_nCanvasYOffset) * nScaling);
+	int nCanvasWidth = (int)(CDG_CANVAS_WIDTH * nScaling * nInvalidRectWFactor);
+	int nCanvasHeight = (int)(CDG_CANVAS_HEIGHT * nScaling * nInvalidRectHFactor);
+	::StretchBlt(g_hForegroundWindowDC, pInvalidWindowRect->left, pInvalidWindowRect->top, pInvalidWindowRect->right - pInvalidWindowRect->left, pInvalidWindowRect->bottom - pInvalidWindowRect->top, g_hMaskedForegroundDC, nCanvasSourceX, nCanvasSourceY, nCanvasWidth, nCanvasHeight, SRCCOPY);
 	if (g_pLogoImage && !g_nCDGPC) {
 		RECT r;
 		::GetClientRect(g_hForegroundWindow, &r);

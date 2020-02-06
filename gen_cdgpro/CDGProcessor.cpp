@@ -112,7 +112,7 @@ DWORD WINAPI CDGProcessor(LPVOID pParams) {
 							free(pInvalidRect);
 							pInvalidRect = NULL;
 						}
-						::RedrawWindow(g_hForegroundWindow, pInvalidRect, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
+						::RedrawWindow(g_hForegroundWindow, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
 					}
 					if (result & 0x02)
 						::RedrawWindow(g_hBackgroundWindow, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
