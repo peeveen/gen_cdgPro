@@ -130,18 +130,47 @@ BYTE Scroll(BYTE color, BYTE hScroll, BYTE hScrollOffset, BYTE vScroll, BYTE vSc
 	memcpy(g_pScrollBufferBitmapBits, g_pScaledForegroundBitmapBits[0], (CDG_BITMAP_WIDTH * CDG_BITMAP_HEIGHT) / 2);
 	HDC hForegroundDC = g_hScaledForegroundDCs[0];
 	::BitBlt(hForegroundDC, nHScrollPixels, nVScrollPixels, CDG_BITMAP_WIDTH, CDG_BITMAP_HEIGHT, g_hScrollBufferDC, 0, 0, SRCCOPY);
-	if (copy) {
-		if (nVScrollPixels > 0)
-			::BitBlt(hForegroundDC, nHScrollPixels, 0, CDG_BITMAP_WIDTH, nVScrollPixels, g_hScrollBufferDC, 0, CDG_HEIGHT - nVScrollPixels, SRCCOPY);
-		else if (nVScrollPixels < 0)
-			::BitBlt(hForegroundDC, nHScrollPixels, CDG_HEIGHT + nVScrollPixels, CDG_BITMAP_WIDTH, -nVScrollPixels, g_hScrollBufferDC, 0, 0, SRCCOPY);
-
-		if (nHScrollPixels > 0)
-			::BitBlt(hForegroundDC, 0, nVScrollPixels, nHScrollPixels, CDG_BITMAP_HEIGHT, g_hScrollBufferDC, CDG_WIDTH - nHScrollPixels, 0, SRCCOPY);
-		else if (nHScrollPixels < 0)
-			::BitBlt(hForegroundDC, CDG_WIDTH + nHScrollPixels, nVScrollPixels, -nHScrollPixels, CDG_BITMAP_HEIGHT, g_hScrollBufferDC, 0, 0, SRCCOPY);
+	DWORD rop = SRCCOPY;
+	HBRUSH oldBrush = NULL;
+	HBRUSH solidBrush = NULL;
+	if (!copy) {
+		solidBrush = ::CreateSolidBrush(RGB(g_effectivePalette[color].rgbRed, g_effectivePalette[color].rgbGreen, g_effectivePalette[color].rgbBlue));
+		oldBrush = (HBRUSH)::SelectObject(hForegroundDC, solidBrush);
+		rop = PATCOPY;
+		if (color != g_nLastMemoryPresetColor)
+			g_nLastMemoryPresetColor = -1;
 	}
-	else if (color != g_nLastMemoryPresetColor)
-		g_nLastMemoryPresetColor = -1;
+	if (nVScrollPixels > 0) {
+		::BitBlt(hForegroundDC, nHScrollPixels, 0, CDG_BITMAP_WIDTH, nVScrollPixels, g_hScrollBufferDC, 0, CDG_HEIGHT - nVScrollPixels, rop);
+		if (nHScrollPixels > 0)
+			::BitBlt(hForegroundDC, (-CDG_WIDTH) + nHScrollPixels, 0, CDG_BITMAP_WIDTH, nVScrollPixels, g_hScrollBufferDC, 0, CDG_HEIGHT - nVScrollPixels, rop);
+		else if (nHScrollPixels < 0)
+			::BitBlt(hForegroundDC, CDG_WIDTH + nHScrollPixels, 0, CDG_BITMAP_WIDTH, nVScrollPixels, g_hScrollBufferDC, 0, CDG_HEIGHT - nVScrollPixels, rop);
+	}
+	else if (nVScrollPixels < 0) {
+		::BitBlt(hForegroundDC, nHScrollPixels, CDG_HEIGHT + nVScrollPixels, CDG_BITMAP_WIDTH, -nVScrollPixels, g_hScrollBufferDC, 0, 0, rop);
+		if (nHScrollPixels > 0)
+			::BitBlt(hForegroundDC, (-CDG_WIDTH) + nHScrollPixels, CDG_HEIGHT + nVScrollPixels, CDG_BITMAP_WIDTH, -nVScrollPixels, g_hScrollBufferDC, 0, 0, rop);
+		else if (nHScrollPixels < 0)
+			::BitBlt(hForegroundDC, CDG_WIDTH + nHScrollPixels, CDG_HEIGHT + nVScrollPixels, CDG_BITMAP_WIDTH, -nVScrollPixels, g_hScrollBufferDC, 0, 0, rop);
+	}
+	if (nHScrollPixels > 0) {
+		::BitBlt(hForegroundDC, 0, nVScrollPixels, nHScrollPixels, CDG_BITMAP_HEIGHT, g_hScrollBufferDC, CDG_WIDTH - nHScrollPixels, 0, rop);
+		if (nVScrollPixels > 0)
+			::BitBlt(hForegroundDC, 0, (-CDG_HEIGHT) + nVScrollPixels, nHScrollPixels, CDG_BITMAP_HEIGHT, g_hScrollBufferDC, CDG_WIDTH - nHScrollPixels, 0, rop);
+		else if (nVScrollPixels < 0)
+			::BitBlt(hForegroundDC, 0, CDG_HEIGHT + nVScrollPixels, nHScrollPixels, CDG_BITMAP_HEIGHT, g_hScrollBufferDC, CDG_WIDTH - nHScrollPixels, 0, rop);
+	}
+	else if (nHScrollPixels < 0) {
+		::BitBlt(hForegroundDC, CDG_WIDTH + nHScrollPixels, nVScrollPixels, -nHScrollPixels, CDG_BITMAP_HEIGHT, g_hScrollBufferDC, 0, 0, rop);
+		if (nVScrollPixels > 0)
+			::BitBlt(hForegroundDC, CDG_WIDTH + nHScrollPixels, (-CDG_HEIGHT) + nVScrollPixels, -nHScrollPixels, CDG_BITMAP_HEIGHT, g_hScrollBufferDC, 0, 0, rop);
+		else if (nVScrollPixels < 0)
+			::BitBlt(hForegroundDC, CDG_WIDTH + nHScrollPixels, CDG_HEIGHT + nVScrollPixels, -nHScrollPixels, CDG_BITMAP_HEIGHT, g_hScrollBufferDC, 0, 0, rop);
+	}
+	if (!copy) {
+		::SelectObject(hForegroundDC, oldBrush);
+		::DeleteObject(solidBrush);
+	}
 	return CheckPixelColorBackgroundChange(true, true, true, true) ? 0x03 : 0x01;
 }
