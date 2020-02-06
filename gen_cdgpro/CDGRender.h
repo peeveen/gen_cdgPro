@@ -8,3 +8,6 @@ void LoadLogo();
 void DestroyLogo();
 
 extern bool g_bShowLogo;
+
+extern int g_nCanvasXOffset;
+extern int g_nCanvasYOffset;

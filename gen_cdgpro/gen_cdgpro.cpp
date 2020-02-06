@@ -15,8 +15,8 @@ using namespace Gdiplus;
 #include "CDGDefs.h"
 #include "CDGGlobals.h"
 #include "CDGPrefs.h"
-#include "CDGInstructionHandlers.h"
 #include "CDGBackgroundFunctions.h"
+#include "CDGPalette.h"
 #include "CDGMenu.h"
 #include "CDGReader.h"
 #include "CDGRender.h"
@@ -48,7 +48,7 @@ DWORD WINAPI StartSongThread(LPVOID pParams) {
 	const WCHAR* fileBeingPlayed = (const WCHAR*)pParams;
 	clearExistingCDGData();
 	if (readCDGData(fileBeingPlayed)) {
-		g_nCurrentTransparentIndex = 0;
+		SetBackgroundColorIndex(0);
 		g_bShowLogo = false;
 		::SetEvent(g_hSongLoadedEvent);
 	}
@@ -57,15 +57,9 @@ DWORD WINAPI StartSongThread(LPVOID pParams) {
 }
 
 void ClearCDGBuffer() {
-	::ZeroMemory(g_logicalPalette, sizeof(RGBQUAD) * 16);
-	::ZeroMemory(g_effectivePalette, sizeof(RGBQUAD) * 16);
-	g_logicalPalette[0].rgbBlue = g_effectivePalette[0].rgbBlue = g_nDefaultBackgroundColor & 0x00ff;
-	g_logicalPalette[0].rgbGreen = g_effectivePalette[0].rgbGreen = (g_nDefaultBackgroundColor >> 8) & 0x00ff;
-	g_logicalPalette[0].rgbRed = g_effectivePalette[0].rgbRed = (g_nDefaultBackgroundColor >> 16) & 0x00ff;
+	ResetPalette();
 	::ZeroMemory(g_pScaledForegroundBitmapBits[0], (((CDG_BITMAP_WIDTH) * (CDG_BITMAP_HEIGHT)) / 2));
 	::ZeroMemory(g_pScrollBufferBitmapBits, (((CDG_BITMAP_WIDTH) * (CDG_BITMAP_HEIGHT)) / 2));
-	for(int f=0;f<SUPPORTED_SCALING_LEVELS;++f)
-		::SetDIBColorTable(g_hScaledForegroundDCs[f], 0, 16, g_logicalPalette);
 	SetBackgroundColorIndex(0);
 	g_bShowLogo = true;
 	::RedrawWindow(g_hForegroundWindow, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);

@@ -16,6 +16,10 @@ Image* g_pLogoImage = NULL;
 SIZE g_logoSize;
 bool g_bShowLogo = true;
 
+// Canvas pixel offsets for scrolling
+int g_nCanvasXOffset = 0;
+int g_nCanvasYOffset = 0;
+
 void Perform2xSmoothing(BYTE* pSourceBitmapBits, BYTE* pDestinationBitmapBits, int nW, int nH, int nSourceBitmapWidth) {
 	// 2x smoothing
 	static BYTE EAandEB, BAandBB, HAandHB;

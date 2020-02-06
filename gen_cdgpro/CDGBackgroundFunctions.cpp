@@ -3,6 +3,11 @@
 #include "CDGGlobals.h"
 #include "CDGPrefs.h"
 #include "CDGBitmaps.h"
+#include "CDGInstructionHandlers.h"
+
+// We keep track of what color is the current transparent color, so that we know whether it's
+// worthwhile calling various GDI functions to change it.
+BYTE g_nCurrentTransparentIndex = 0;
 
 void SetBackgroundColorIndex(BYTE index) {
 	g_nCurrentTransparentIndex = index;
