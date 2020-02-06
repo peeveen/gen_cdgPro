@@ -7,12 +7,6 @@
 // Plugin title
 #define PLUGIN_NAME "CDG-Pro Plugin"
 
-#define BDM_PALETTEINDEXZERO 0
-#define BDM_TOPLEFTPIXEL 1
-#define BDM_TOPRIGHTPIXEL 2
-#define BDM_BOTTOMLEFTPIXEL 3
-#define BDM_BOTTOMRIGHTPIXEL 4
-
 // main structure with plugin information, version, name...
 typedef struct {
 	int version;             // version of the plugin structure

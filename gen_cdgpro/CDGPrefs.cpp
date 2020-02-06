@@ -1,5 +1,5 @@
 #include "stdafx.h"
-#include "CDGDefs.h"
+#include "CDGPrefs.h"
 
 // Preferences (TODO: INI file or UI).
 int g_nBackgroundOpacity = 160;

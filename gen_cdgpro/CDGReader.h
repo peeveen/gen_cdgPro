@@ -6,5 +6,5 @@
 extern CDGPacket* g_pCDGData;
 extern int g_nCDGPackets;
 
-void readCDGData(const WCHAR* pFileBeingPlayed);
+bool readCDGData(const WCHAR* pFileBeingPlayed);
 void clearExistingCDGData();

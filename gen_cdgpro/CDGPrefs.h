@@ -1,6 +1,13 @@
 #pragma once
 #include "stdafx.h"
 
+// Valid values for Background Detection Mode pref
+#define BDM_PALETTEINDEXZERO 0
+#define BDM_TOPLEFTPIXEL 1
+#define BDM_TOPRIGHTPIXEL 2
+#define BDM_BOTTOMLEFTPIXEL 3
+#define BDM_BOTTOMRIGHTPIXEL 4
+
 // Preferences (TODO: INI file or UI).
 extern int g_nBackgroundOpacity;
 extern bool g_bDrawOutline;

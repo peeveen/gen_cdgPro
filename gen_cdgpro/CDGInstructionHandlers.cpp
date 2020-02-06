@@ -4,6 +4,7 @@
 #include "CDGPrefs.h"
 #include "CDGBitmaps.h"
 #include "CDGBackgroundFunctions.h"
+#include "CDGReader.h"
 
 BYTE MemoryPreset(BYTE color, BYTE repeat) {
 	if (g_nLastMemoryPresetColor == color)

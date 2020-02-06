@@ -7,7 +7,8 @@
 CDGPacket* g_pCDGData = NULL;
 int g_nCDGPackets = 0;
 
-void readCDGData(const WCHAR* pFileBeingPlayed) {
+bool readCDGData(const WCHAR* pFileBeingPlayed) {
+	bool result = false;
 	WCHAR pathBuffer[MAX_PATH + 1];
 	char zipEntryName[MAX_PATH + 1];
 	zip_stat_t fileStat;
@@ -52,6 +53,7 @@ void readCDGData(const WCHAR* pFileBeingPlayed) {
 									g_pCDGData = (CDGPacket*)malloc((size_t)g_nCDGPackets * sizeof(CDGPacket));
 									zip_fread(pCDGFile, g_pCDGData, fileStat.size);
 									zip_fclose(pCDGFile);
+									result = true;
 									break;
 								}
 							}
@@ -80,11 +82,14 @@ void readCDGData(const WCHAR* pFileBeingPlayed) {
 			g_nCDGPackets = size / sizeof(CDGPacket);
 			fseek(pFile, 0, SEEK_SET);
 			g_pCDGData = (CDGPacket*)malloc(g_nCDGPackets * sizeof(CDGPacket));
-			if (g_pCDGData)
+			if (g_pCDGData) {
 				fread(g_pCDGData, sizeof(CDGPacket), g_nCDGPackets, pFile);
+				result = true;
+			}
 			fclose(pFile);
 		}
 	}
+	return result;
 }
 
 void clearExistingCDGData() {
