@@ -52,7 +52,7 @@ END
 
 // Icon with lowest ID value placed first to ensure application icon
 // remains consistent on all systems.
-IDI_ICON1               ICON                    "winampIcon.ico"
+IDI_APPICON             ICON                    "winampIcon.ico"
 
 
 /////////////////////////////////////////////////////////////////////////////
@@ -60,9 +60,9 @@ IDI_ICON1               ICON                    "winampIcon.ico"
 // Bitmap
 //
 
-IDB_BITMAP1             BITMAP                  "bitmap1.bmp"
+IDB_CHECKED             BITMAP                  "checked.bmp"
 
-IDB_BITMAP2             BITMAP                  "bitmap2.bmp"
+IDB_UNCHECKED           BITMAP                  "unchecked.bmp"
 
 
 /////////////////////////////////////////////////////////////////////////////
@@ -70,13 +70,13 @@ IDB_BITMAP2             BITMAP                  "bitmap2.bmp"
 // Dialog
 //
 
-IDD_DIALOG1 DIALOGEX 0, 0, 151, 96
+IDD_ABOUTDIALOG DIALOGEX 0, 0, 265, 96
 STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION
 CAPTION "About CDG Pro"
 FONT 8, "MS Shell Dlg", 400, 0, 0x1
 BEGIN
-    DEFPUSHBUTTON   "OK",IDOK,51,75,50,14
-    CTEXT           "CDG Pro for WinAmp\nBy Steven Frew\n\nPayPal donations gratefully received!\nsteven.fullhouse@gmail.com\nThanks!",IDC_STATIC,7,15,138,57
+    DEFPUSHBUTTON   "OK",IDOK,107,75,50,14
+    CTEXT           "CDG Pro for WinAmp\nBy Steven Frew\n\nPayPal donations, bug reports and feature requests gratefully received!\n\nsteven.fullhouse@gmail.com\nThanks!",IDC_STATIC,7,7,251,65
 END
 
 
@@ -88,10 +88,10 @@ END
 #ifdef APSTUDIO_INVOKED
 GUIDELINES DESIGNINFO
 BEGIN
-    IDD_DIALOG1, DIALOG
+    IDD_ABOUTDIALOG, DIALOG
     BEGIN
         LEFTMARGIN, 7
-        RIGHTMARGIN, 144
+        RIGHTMARGIN, 258
         TOPMARGIN, 7
         BOTTOMMARGIN, 89
     END
@@ -104,7 +104,7 @@ END
 // AFX_DIALOG_LAYOUT
 //
 
-IDD_DIALOG1 AFX_DIALOG_LAYOUT
+IDD_ABOUTDIALOG AFX_DIALOG_LAYOUT
 BEGIN
     0
 END

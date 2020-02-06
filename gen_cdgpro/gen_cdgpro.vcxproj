@@ -159,6 +159,16 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="CDGBackgroundFunctions.h" />
+    <ClInclude Include="CDGBitmaps.h" />
+    <ClInclude Include="CDGDefs.h" />
+    <ClInclude Include="CDGGlobals.h" />
+    <ClInclude Include="CDGInstructionHandlers.h" />
+    <ClInclude Include="CDGMenu.h" />
+    <ClInclude Include="CDGPrefs.h" />
+    <ClInclude Include="CDGReader.h" />
+    <ClInclude Include="CDGRender.h" />
+    <ClInclude Include="CDGWindows.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="stdafx.h" />
     <ClInclude Include="targetver.h" />
@@ -166,8 +176,17 @@
     <ClInclude Include="zipconf.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="CDGBackgroundFunctions.cpp" />
+    <ClCompile Include="CDGBitmaps.cpp" />
+    <ClCompile Include="CDGGlobals.cpp" />
+    <ClCompile Include="CDGMenu.cpp" />
+    <ClCompile Include="CDGPrefs.cpp" />
+    <ClCompile Include="CDGReader.cpp" />
+    <ClCompile Include="CDGRender.cpp" />
+    <ClCompile Include="CDGWindows.cpp" />
     <ClCompile Include="dllmain.cpp" />
     <ClCompile Include="gen_cdgpro.cpp" />
+    <ClCompile Include="CDGInstructionHandlers.cpp" />
     <ClCompile Include="stdafx.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
@@ -179,8 +198,8 @@
     <ResourceCompile Include="gen_cdgpro.rc" />
   </ItemGroup>
   <ItemGroup>
-    <Image Include="bitmap1.bmp" />
-    <Image Include="bitmap2.bmp" />
+    <Image Include="checked.bmp" />
+    <Image Include="unchecked.bmp" />
     <Image Include="winampIcon.ico" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

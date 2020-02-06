@@ -1,0 +1,168 @@
+#include "stdafx.h"
+#include "CDGDefs.h"
+#include "CDGGlobals.h"
+#include "CDGPrefs.h"
+#include "CDGBitmaps.h"
+#include "CDGBackgroundFunctions.h"
+
+BYTE MemoryPreset(BYTE color, BYTE repeat) {
+	if (g_nLastMemoryPresetColor == color)
+		return 0x00;
+	memset(g_pScaledForegroundBitmapBits[0], (color << 4) | color, (CDG_BITMAP_WIDTH * CDG_BITMAP_HEIGHT) / 2);
+	g_nLastMemoryPresetColor = color;
+	switch (g_nBackgroundDetectionMode) {
+	case BDM_TOPLEFTPIXEL:
+	case BDM_TOPRIGHTPIXEL:
+	case BDM_BOTTOMLEFTPIXEL:
+	case BDM_BOTTOMRIGHTPIXEL:
+		// All pixels will be the same value at this point, so use any corner.
+		SetBackgroundColorFromPixel(TOP_LEFT_PIXEL_OFFSET, true);
+		return 0x03;
+	default:
+		return 0x01;
+	}
+}
+
+void BorderPreset(BYTE color) {
+	BYTE colorByte = (color << 4) | color;
+	// Top and bottom edge.
+	BYTE* pForegroundBitmapBits = g_pScaledForegroundBitmapBits[0];
+	memset(pForegroundBitmapBits, colorByte, (CDG_BITMAP_WIDTH * CDG_CELL_HEIGHT) / 2);
+	memset(pForegroundBitmapBits + (((CDG_BITMAP_WIDTH * CDG_BITMAP_HEIGHT) - (CDG_BITMAP_WIDTH * CDG_CELL_HEIGHT)) / 2), colorByte, (CDG_BITMAP_WIDTH * CDG_CELL_HEIGHT) / 2);
+	// Left and right edge.
+	for (int f = CDG_CELL_HEIGHT; f < CDG_CELL_HEIGHT + CDG_CANVAS_HEIGHT; ++f) {
+		memset(pForegroundBitmapBits + ((f * CDG_BITMAP_WIDTH) / 2), colorByte, CDG_CELL_WIDTH / 2);
+		memset(pForegroundBitmapBits + ((f * CDG_BITMAP_WIDTH) / 2) + ((CDG_WIDTH - CDG_CELL_WIDTH) / 2), colorByte, CDG_CELL_WIDTH / 2);
+	}
+	// Screen is no longer "blank".
+	g_nLastMemoryPresetColor = -1;
+}
+
+BYTE TileBlock(BYTE* pData, bool isXor) {
+	// 3 byte buffer that we will use to set values in the CDG raster.
+	static BYTE g_blockBuffer[3];
+	BYTE bgColor = pData[0] & 0x0F;
+	BYTE fgColor = pData[1] & 0x0F;
+	// Python CDG parser code suggests this bit means "ignore this command"?
+	//if (pData[1] & 0x20)
+	//	return;
+	BYTE row = pData[2] & 0x3F;
+	BYTE col = pData[3] & 0x3F;
+	// If the coordinates are offscreen, reject them as bad data.
+	if (col >= CDG_WIDTH_CELLS || row >= CDG_HEIGHT_CELLS)
+		return 0x00;
+	BYTE upperFgColor = fgColor << 4;
+	BYTE upperBgColor = bgColor << 4;
+	int xPixel = col * CDG_CELL_WIDTH;
+	int yPixel = row * CDG_CELL_HEIGHT;
+	int foregroundBitmapOffset = ((xPixel)+(yPixel * CDG_BITMAP_WIDTH)) / 2;
+	BYTE* pForegroundBitmapBits = g_pScaledForegroundBitmapBits[0];
+	// The remaining 12 bytes in the data field will contain the bitmask of pixels to set.
+	// The lower six bits of each byte are the pixel mask.
+	for (int f = 0; f < 12; ++f) {
+		BYTE bits = pData[f + 4];
+		g_blockBuffer[0] = ((bits & 0x20) ? upperFgColor : upperBgColor) | ((bits & 0x10) ? fgColor : bgColor);
+		g_blockBuffer[1] = ((bits & 0x08) ? upperFgColor : upperBgColor) | ((bits & 0x04) ? fgColor : bgColor);
+		g_blockBuffer[2] = ((bits & 0x02) ? upperFgColor : upperBgColor) | ((bits & 0x01) ? fgColor : bgColor);
+		if (isXor) {
+			pForegroundBitmapBits[foregroundBitmapOffset] ^= g_blockBuffer[0];
+			pForegroundBitmapBits[foregroundBitmapOffset + 1] ^= g_blockBuffer[1];
+			pForegroundBitmapBits[foregroundBitmapOffset + 2] ^= g_blockBuffer[2];
+		}
+		else {
+			pForegroundBitmapBits[foregroundBitmapOffset] = g_blockBuffer[0];
+			pForegroundBitmapBits[foregroundBitmapOffset + 1] = g_blockBuffer[1];
+			pForegroundBitmapBits[foregroundBitmapOffset + 2] = g_blockBuffer[2];
+		}
+		foregroundBitmapOffset += (CDG_BITMAP_WIDTH / 2);
+	}
+	// Did we write to the non-border screen area?
+	BYTE result = (row < (CDG_HEIGHT_CELLS - 1) && row>0 && col < (CDG_WIDTH_CELLS - 1) && col>0) ? 0x03 : 0x02;
+	// Also need to know if the background needs refreshed.
+	bool topLeftPixelSet = col == 1 && row == 1;
+	bool topRightPixelSet = col == CDG_WIDTH_CELLS - 2 && row == 1;
+	bool bottomLeftPixelSet = col == 1 && row == CDG_HEIGHT_CELLS - 2;
+	bool bottomRightPixelSet = col == CDG_WIDTH_CELLS - 2 && row == CDG_HEIGHT_CELLS - 2;
+	if (topLeftPixelSet || topRightPixelSet || bottomLeftPixelSet || bottomRightPixelSet)
+		if (!CheckPixelColorBackgroundChange(topLeftPixelSet, topRightPixelSet, bottomLeftPixelSet, bottomRightPixelSet))
+			result &= 0x01;
+	// Screen is no longer blank.
+	g_nLastMemoryPresetColor = -1;
+	return result;
+}
+
+BYTE LoadColorTable(BYTE* pData, bool highTable) {
+	int nPaletteStartIndex = (highTable ? 8 : 0);
+	for (int f = 0; f < 8; ++f) {
+		BYTE colorByte1 = pData[f * 2] & 0x3F;
+		BYTE colorByte2 = pData[(f * 2) + 1] & 0x3F;
+		// Get 4-bit color values.
+		BYTE red = (colorByte1 >> 2) & 0x0F;
+		BYTE green = ((colorByte1 << 2) & 0x0C) | ((colorByte2 >> 4) & 0x03);
+		BYTE blue = colorByte2 & 0x0F;
+		// Convert to 24-bit color.
+		red = (red * 17);
+		green = (green * 17);
+		blue = (blue * 17);
+		g_logicalPalette[f + nPaletteStartIndex] = { blue,green,red,0 };
+	}
+	// First, copy the original palette to the unique palette.
+	for (int f = 0; f < 16; ++f)
+		g_effectivePalette[f] = g_logicalPalette[f];
+	// Now check each entry and unique-ify it if necessary.
+	// We will increase/decrease the matching RGB values by this amount.
+	// Each time we find a match, we will increment this value.
+	BYTE uniqueifier = 1;
+	// Remember that each colour will originally have been a 12-bit
+	// colour, which we have multiplied by 17 to become 24-bit, so at the
+	// start of this operation, there should not be any two colours that
+	// are within 16 of each other. It should also be impossible for the
+	// uniqueifier to exceed 16, so we should never create a clash.
+	for (int f = 0; f < 16; ++f) {
+		BYTE red = g_effectivePalette[f].rgbRed;
+		BYTE green = g_effectivePalette[f].rgbGreen;
+		BYTE blue = g_effectivePalette[f].rgbBlue;
+		for (int g = f + 1; g < 16; ++g) {
+			BYTE testRed = g_effectivePalette[g].rgbRed;
+			BYTE testGreen = g_effectivePalette[g].rgbGreen;
+			BYTE testBlue = g_effectivePalette[g].rgbBlue;
+			if ((testRed == red) && (testGreen == green) && (testBlue == blue)) {
+				testRed += ((BYTE)(testRed + uniqueifier) < testRed ? -uniqueifier : uniqueifier);
+				testGreen += ((BYTE)(testGreen + uniqueifier) < testGreen ? -uniqueifier : uniqueifier);
+				testBlue += ((BYTE)(testBlue + uniqueifier) < testBlue ? -uniqueifier : uniqueifier);
+				g_effectivePalette[g] = { testBlue,testGreen,testRed,0 };
+				++uniqueifier;
+			}
+		}
+	}
+	for (int f = 0; f < SUPPORTED_SCALING_LEVELS; ++f)
+		::SetDIBColorTable(g_hScaledForegroundDCs[f], 0, 16, g_effectivePalette);
+	::SetDIBColorTable(g_hScrollBufferDC, 0, 16, g_effectivePalette);
+	SetBackgroundColorIndex(g_nCurrentTransparentIndex);
+	return 0x01 | (g_nCurrentTransparentIndex >= nPaletteStartIndex && g_nCurrentTransparentIndex < nPaletteStartIndex + 8 ? 0x02 : 0x00);
+}
+
+BYTE Scroll(BYTE color, BYTE hScroll, BYTE hScrollOffset, BYTE vScroll, BYTE vScrollOffset, bool copy) {
+	int nHScrollPixels = ((hScroll == 2 ? -1 : (hScroll == 1 ? 1 : 0)) * CDG_CELL_WIDTH);
+	int nVScrollPixels = ((vScroll == 2 ? -1 : (vScroll == 1 ? 1 : 0)) * CDG_CELL_HEIGHT);
+	g_nCanvasXOffset = hScrollOffset;
+	g_nCanvasYOffset = vScrollOffset;
+	// This should be faster than BitBlt
+	memcpy(g_pScrollBufferBitmapBits, g_pScaledForegroundBitmapBits[0], (CDG_BITMAP_WIDTH * CDG_BITMAP_HEIGHT) / 2);
+	HDC hForegroundDC = g_hScaledForegroundDCs[0];
+	::BitBlt(hForegroundDC, nHScrollPixels, nVScrollPixels, CDG_BITMAP_WIDTH, CDG_BITMAP_HEIGHT, g_hScrollBufferDC, 0, 0, SRCCOPY);
+	if (copy) {
+		if (nVScrollPixels > 0)
+			::BitBlt(hForegroundDC, nHScrollPixels, 0, CDG_BITMAP_WIDTH, nVScrollPixels, g_hScrollBufferDC, 0, CDG_HEIGHT - nVScrollPixels, SRCCOPY);
+		else if (nVScrollPixels < 0)
+			::BitBlt(hForegroundDC, nHScrollPixels, CDG_HEIGHT + nVScrollPixels, CDG_BITMAP_WIDTH, -nVScrollPixels, g_hScrollBufferDC, 0, 0, SRCCOPY);
+
+		if (nHScrollPixels > 0)
+			::BitBlt(hForegroundDC, 0, nVScrollPixels, nHScrollPixels, CDG_BITMAP_HEIGHT, g_hScrollBufferDC, CDG_WIDTH - nHScrollPixels, 0, SRCCOPY);
+		else if (nHScrollPixels < 0)
+			::BitBlt(hForegroundDC, CDG_WIDTH + nHScrollPixels, nVScrollPixels, -nHScrollPixels, CDG_BITMAP_HEIGHT, g_hScrollBufferDC, 0, 0, SRCCOPY);
+	}
+	else if (color != g_nLastMemoryPresetColor)
+		g_nLastMemoryPresetColor = -1;
+	return CheckPixelColorBackgroundChange(true, true, true, true) ? 0x03 : 0x01;
+}
