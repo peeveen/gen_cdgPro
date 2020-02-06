@@ -43,7 +43,7 @@ void BorderPreset(BYTE color) {
 	g_nLastMemoryPresetColor = -1;
 }
 
-BYTE TileBlock(BYTE* pData, bool isXor) {
+BYTE TileBlock(BYTE* pData, bool isXor, RECT** ppInvalidRect) {
 	// 3 byte buffer that we will use to set values in the CDG raster.
 	static BYTE g_blockBuffer[3];
 	BYTE bgColor = pData[0] & 0x0F;
@@ -60,6 +60,16 @@ BYTE TileBlock(BYTE* pData, bool isXor) {
 	BYTE upperBgColor = bgColor << 4;
 	int xPixel = col * CDG_CELL_WIDTH;
 	int yPixel = row * CDG_CELL_HEIGHT;
+	RECT tileRect = { xPixel,yPixel,xPixel + CDG_CELL_WIDTH,yPixel + CDG_CELL_HEIGHT };
+	if (!*ppInvalidRect) {
+		*ppInvalidRect = (RECT*)malloc(sizeof(RECT));
+		memcpy(*ppInvalidRect, &tileRect, sizeof(RECT));
+	}
+	else {
+		RECT originalInvalidRect;
+		memcpy(&originalInvalidRect, *ppInvalidRect, sizeof(RECT));
+		::UnionRect(*ppInvalidRect, &originalInvalidRect, &tileRect);
+	}
 	int foregroundBitmapOffset = ((xPixel)+(yPixel * CDG_BITMAP_WIDTH)) / 2;
 	BYTE* pForegroundBitmapBits = g_pScaledForegroundBitmapBits[0];
 	// The remaining 12 bytes in the data field will contain the bitmask of pixels to set.

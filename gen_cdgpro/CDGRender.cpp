@@ -18,21 +18,29 @@ SIZE g_logoSize;
 // Canvas pixel offsets for scrolling
 int g_nCanvasXOffset = 0;
 int g_nCanvasYOffset = 0;
+// What section of the CDG canvas needs redrawn?
+RECT g_redrawRect = { 0,0,0,0 };
 
-void Perform2xSmoothing(BYTE* pSourceBitmapBits, BYTE* pDestinationBitmapBits, int nW, int nH, int nSourceBitmapWidth) {
+void Perform2xSmoothing(BYTE* pSourceBitmapBits, BYTE* pDestinationBitmapBits, RECT *pInvalidRect, int nSourceBitmapWidth) {
 	// 2x smoothing
 	static BYTE EAandEB, BAandBB, HAandHB;
 	static BYTE EA, EB;
 	static BYTE B, D, F, H;
 	static BYTE E0, E1, E2, E3;
-	int right = nW - 1;
-	int bottom = nH - 1;
+	int nW = pInvalidRect->right - pInvalidRect->left;
+	int nH = pInvalidRect->bottom - pInvalidRect->top;
+	int left = pInvalidRect->left;
+	int top = pInvalidRect->top;
+	int right = pInvalidRect->right;
+	int bottom = pInvalidRect->bottom;
 	int halfBitmapWidth = nSourceBitmapWidth >> 1;
 	int doubleBitmapWidth = nSourceBitmapWidth << 1;
 	int destFinishingOffset = nSourceBitmapWidth + (nSourceBitmapWidth - nW);
 	int sourceFinishingOffset = halfBitmapWidth - (nW / 2);
-	for (int y = 0; y <= bottom; ++y) {
-		for (int x = 0; x <= right; x += 2) {
+	pSourceBitmapBits += (left / 2) + (halfBitmapWidth * top);
+	pDestinationBitmapBits += (left) + (doubleBitmapWidth * top);
+	for (int y = top; y < bottom; ++y) {
+		for (int x = left; x < right; x += 2) {
 			// Each byte is two pixels.
 			EAandEB = *pSourceBitmapBits;
 			BAandBB = y ? *(pSourceBitmapBits - halfBitmapWidth) : EAandEB;
@@ -87,17 +95,20 @@ void DrawBackground() {
 
 void DrawForeground() {
 	RECT r;
-	HDC hSourceDC = g_hScaledForegroundDCs[0];
 	::GetClientRect(g_hForegroundWindow, &r);
+	HDC hSourceDC = g_hScaledForegroundDCs[0];
+	RECT invalidRect;
+	memcpy(&invalidRect, &g_redrawRect, sizeof(RECT));
+	::ZeroMemory(&g_redrawRect, sizeof(RECT));
 	int nScaling = 1;
 	for (int f = 0; f < g_nSmoothingPasses && f < (SUPPORTED_SCALING_LEVELS - 1); ++f) {
-		int startX = CDG_CANVAS_X * nScaling;
-		int startY = CDG_CANVAS_Y * nScaling;
-		int width = CDG_WIDTH * nScaling;
-		int height = CDG_HEIGHT * nScaling;
 		int sourceWidth = CDG_BITMAP_WIDTH * nScaling;
-		Perform2xSmoothing(g_pScaledForegroundBitmapBits[f], g_pScaledForegroundBitmapBits[f + 1], width, height, sourceWidth);
+		Perform2xSmoothing(g_pScaledForegroundBitmapBits[f], g_pScaledForegroundBitmapBits[f + 1], &invalidRect, sourceWidth);
 		nScaling *= 2;
+		invalidRect.left *= 2;
+		invalidRect.right *= 2;
+		invalidRect.top *= 2;
+		invalidRect.bottom *= 2;
 		hSourceDC = g_hScaledForegroundDCs[f + 1];
 	}
 	::BitBlt(g_hMaskDC, 0, 0, CDG_BITMAP_WIDTH * nScaling, CDG_BITMAP_HEIGHT * nScaling, hSourceDC, 0, 0, SRCCOPY);

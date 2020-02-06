@@ -2,6 +2,7 @@
 #include "CDGGlobals.h"
 #include "CDGPrefs.h"
 #include "CDGReader.h"
+#include "CDGRender.h"
 #include "CDGWindows.h"
 #include "CDGPalette.h"
 #include "CDGInstructionHandlers.h"
@@ -17,7 +18,13 @@ HANDLE g_hSongLoadedEvent = NULL;
 // Current CDG instruction index.
 DWORD g_nCDGPC = 0;
 
-BYTE ProcessCDGPackets(long songPosition) {
+void InvalidateEntireWindow(RECT** pInvalidRect) {
+	if (!*pInvalidRect)
+		*pInvalidRect = (RECT*)malloc(sizeof(RECT));
+	**pInvalidRect = { 0,0,CDG_WIDTH,CDG_HEIGHT };
+}
+
+BYTE ProcessCDGPackets(long songPosition,RECT **ppInvalidRect) {
 	BYTE result = 0;
 	HANDLE waitHandles[] = { g_hStopCDGProcessingEvent, g_hStopCDGThreadEvent };
 	// Get current song position in milliseconds (see comment about rewind tolerance).
@@ -44,17 +51,19 @@ BYTE ProcessCDGPackets(long songPosition) {
 					switch (instr) {
 					case CDG_INSTR_MEMORY_PRESET:
 						result |= MemoryPreset(pCDGPacket->data[0] & 0x0F, pCDGPacket->data[1] & 0x0F);
+						InvalidateEntireWindow(ppInvalidRect);
 						break;
 					case CDG_INSTR_BORDER_PRESET:
 						BorderPreset(pCDGPacket->data[0] & 0x0F);
 						break;
 					case CDG_INSTR_TILE_BLOCK:
 					case CDG_INSTR_TILE_BLOCK_XOR:
-						result |= TileBlock(pCDGPacket->data, instr == CDG_INSTR_TILE_BLOCK_XOR);
+						result |= TileBlock(pCDGPacket->data, instr == CDG_INSTR_TILE_BLOCK_XOR,ppInvalidRect);
 						break;
 					case CDG_INSTR_SCROLL_COPY:
 					case CDG_INSTR_SCROLL_PRESET:
 						result |= Scroll(pCDGPacket->data[0] & 0x0F, (pCDGPacket->data[1] >> 4) & 0x03, pCDGPacket->data[1] & 0x0F, (pCDGPacket->data[2] >> 4) & 0x03, pCDGPacket->data[2] & 0x0F, instr == CDG_INSTR_SCROLL_COPY);
+						InvalidateEntireWindow(ppInvalidRect);
 						break;
 					case CDG_INSTR_TRANSPARENT_COLOR:
 						// Not implemented.
@@ -62,6 +71,7 @@ BYTE ProcessCDGPackets(long songPosition) {
 					case CDG_INSTR_LOAD_COLOR_TABLE_LOW:
 					case CDG_INSTR_LOAD_COLOR_TABLE_HIGH:
 						result |= LoadColorTable(pCDGPacket->data, instr == CDG_INSTR_LOAD_COLOR_TABLE_HIGH);
+						InvalidateEntireWindow(ppInvalidRect);
 						break;
 					default:
 						break;
@@ -84,6 +94,7 @@ void ResetProcessor() {
 
 DWORD WINAPI CDGProcessor(LPVOID pParams) {
 	HANDLE waitHandles[] = { g_hStopCDGProcessingEvent, g_hStopCDGThreadEvent,g_hSongLoadedEvent };
+	static RECT *pInvalidRect=NULL;
 	for (;;) {
 		ResetProcessor();
 		int waitResult = ::WaitForMultipleObjects(2, waitHandles + 1, FALSE, INFINITE);
@@ -94,11 +105,16 @@ DWORD WINAPI CDGProcessor(LPVOID pParams) {
 			waitResult = ::WaitForMultipleObjects(2, waitHandles, FALSE, SCREEN_REFRESH_MS);
 			if (waitResult == WAIT_TIMEOUT) {
 				if (g_nCDGPC < g_nCDGPackets) {
-					byte result = ProcessCDGPackets(::SendMessage(g_hWinampWindow, WM_WA_IPC, 0, IPC_GETOUTPUTTIME));
+					byte result = ProcessCDGPackets(::SendMessage(g_hWinampWindow, WM_WA_IPC, 0, IPC_GETOUTPUTTIME),&pInvalidRect);
 					if (result & 0x01)
-						::RedrawWindow(g_hForegroundWindow, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
+						::RedrawWindow(g_hForegroundWindow, pInvalidRect, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
 					if (result & 0x02)
 						::RedrawWindow(g_hBackgroundWindow, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
+					if (pInvalidRect) {
+						memcpy(&g_redrawRect, pInvalidRect, sizeof(RECT));
+						free(pInvalidRect);
+						pInvalidRect = NULL;
+					}
 				}
 			}
 			else

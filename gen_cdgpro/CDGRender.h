@@ -8,3 +8,4 @@ void DestroyLogo();
 
 extern int g_nCanvasXOffset;
 extern int g_nCanvasYOffset;
+extern RECT g_redrawRect;
