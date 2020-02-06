@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include <wchar.h>
+#include <windowsx.h>
 #include <objidl.h>
 #include <stdlib.h>
 #include <math.h>
@@ -133,6 +134,11 @@ typedef struct {
 #define CDG_INSTR_LOAD_COLOR_TABLE_HIGH (31)
 #define CDG_INSTR_TILE_BLOCK_XOR (38)
 
+// Right-click menu item IDs
+#define MENUITEM_TOPMOST_ID (1)
+#define MENUITEM_FULLSCREEN_ID (2)
+#define MENUITEM_ABOUT_ID (3)
+
 // The CDG data packet structure.
 struct CDGPacket {
 	BYTE command;
@@ -179,6 +185,8 @@ HDC g_hForegroundWindowDC = NULL;
 HWND g_hForegroundWindow = NULL;
 // Original WndProc that we have to swap back in at the end of proceedings.
 WNDPROC g_pOriginalWndProc;
+// Right click menu
+HMENU g_hMenu = NULL;
 // Brush filled with the transparency color.
 HBRUSH g_hTransparentBrush;
 // Current CDG data.
@@ -214,6 +222,9 @@ SIZE g_logoSize;
 bool g_bShowLogo = true;
 // GDI+ token
 ULONG_PTR g_gdiPlusToken;
+// Window state
+bool g_bFullScreen = false;
+RECT g_lastSize;
 
 // This is an export function called by winamp which returns this plugin info.
 // We wrap the code in 'extern "C"' to ensure the export isn't mangled if used in a CPP file.
@@ -227,6 +238,42 @@ void clearExistingCDGData() {
 		g_pCDGData = NULL;
 	}
 	g_nCDGPackets = 0;
+}
+
+void SetFullScreen(bool fullscreen)
+{
+	if (g_bFullScreen != fullscreen) {
+		if (!g_bFullScreen)
+			::GetWindowRect(g_hForegroundWindow, &g_lastSize);
+
+		g_bFullScreen = fullscreen;
+
+		if (g_bFullScreen)
+		{
+			// Set new window style and size.
+			DWORD currentStyle = ::GetWindowLong(g_hForegroundWindow, GWL_STYLE);
+			::SetWindowLong(g_hForegroundWindow, GWL_STYLE, currentStyle & ~WS_THICKFRAME);
+
+			// On expand, if we're given a window_rect, grow to it, otherwise do not resize.
+			MONITORINFO monitor_info;
+			monitor_info.cbSize = sizeof(monitor_info);
+			::GetMonitorInfo(MonitorFromWindow(g_hForegroundWindow, MONITOR_DEFAULTTONEAREST), &monitor_info);
+			RECT window_rect(monitor_info.rcMonitor);
+			::SetWindowPos(g_hForegroundWindow, NULL, window_rect.left, window_rect.top, window_rect.right - window_rect.left, window_rect.bottom - window_rect.top, SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+		}
+		else
+		{
+			// Reset original window style and size.  The multiple window size/moves
+			// here are ugly, but if SetWindowPos() doesn't redraw, the taskbar won't be
+			// repainted.  Better-looking methods welcome.
+			DWORD currentStyle = ::GetWindowLong(g_hForegroundWindow, GWL_STYLE);
+			::SetWindowLong(g_hForegroundWindow, GWL_STYLE, currentStyle | WS_THICKFRAME);
+
+			// On restore, resize to the previous saved rect size.
+			RECT new_rect(g_lastSize);
+			::SetWindowPos(g_hForegroundWindow, NULL, new_rect.left, new_rect.top, new_rect.right - new_rect.left, new_rect.bottom - new_rect.top, SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+		}
+	}
 }
 
 void SetBackgroundColorIndex(byte index) {
@@ -616,6 +663,40 @@ bool StartCDGProcessingThread() {
 	return !!g_hCDGProcessingThread;
 }
 
+INT_PTR AboutDialogProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+	switch (msg)
+	{
+	case WM_INITDIALOG: {
+		RECT rParent, rThis, rCentered;
+		::GetWindowRect(g_hForegroundWindow, &rParent);
+		::GetWindowRect(hwnd, &rThis);
+		::CopyRect(&rCentered, &rParent);
+		::OffsetRect(&rThis, -rThis.left, -rThis.top);
+		::OffsetRect(&rCentered, -rCentered.left, -rCentered.top);
+		::OffsetRect(&rCentered, -rThis.right, -rThis.bottom);
+		::SetWindowPos(hwnd, HWND_TOP, rParent.left + (rCentered.right / 2), rParent.top + (rCentered.bottom / 2), 0, 0, SWP_NOSIZE);
+		/*		if (::GetDlgCtrlID((HWND)wParam) != ID_ITEMNAME)
+				{
+					::SetFocus(::GetDlgItem(hwndDlg, ID_ITEMNAME));
+					return FALSE;
+				}*/
+		return TRUE;
+	}
+	case WM_COMMAND:
+		switch (LOWORD(wParam))
+		{
+		case IDOK:
+			EndDialog(hwnd, wParam);
+			return TRUE;
+		}
+	}
+	return FALSE;
+}
+
+void ShowAboutDialog() {
+	::DialogBox(plugin.hDllInstance,MAKEINTRESOURCE(IDD_DIALOG1),g_hForegroundWindow,(DLGPROC)AboutDialogProc);
+}
+
 LRESULT CALLBACK ForegroundWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
 	switch (uMsg)
@@ -626,10 +707,58 @@ LRESULT CALLBACK ForegroundWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARA
 			hit = HTCAPTION;
 		return hit;
 	}
+	case WM_KEYDOWN:
+		if (wParam == VK_ESCAPE)
+			SetFullScreen(false);
+		break;
 	case WM_WINDOWPOSCHANGED:
 	case WM_SHOWWINDOW:
 		::SetWindowPos(g_hBackgroundWindow, hwnd, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
 		break;
+	case WM_NCRBUTTONUP: {
+		MENUITEMINFO menuItemInfo;
+		::ZeroMemory(&menuItemInfo, sizeof(MENUITEMINFO));
+		menuItemInfo.cbSize = sizeof(MENUITEMINFO);
+		menuItemInfo.fMask = MIIM_STATE;
+		int xPos = GET_X_LPARAM(lParam);
+		int yPos = GET_Y_LPARAM(lParam); 
+		int command=::TrackPopupMenu(g_hMenu, TPM_RETURNCMD, xPos, yPos, 0,g_hForegroundWindow, NULL);
+		switch (command) {
+		case MENUITEM_TOPMOST_ID: {
+			DWORD currentExStyle = ::GetWindowLong(g_hForegroundWindow, GWL_EXSTYLE);
+			if (currentExStyle & WS_EX_TOPMOST) {
+				menuItemInfo.fState = MFS_UNCHECKED;
+				::SetWindowLong(g_hForegroundWindow, GWL_EXSTYLE, currentExStyle &= ~WS_EX_TOPMOST);
+				::SetMenuItemInfo(g_hMenu, MENUITEM_TOPMOST_ID, FALSE, &menuItemInfo);
+				::SetWindowPos(g_hForegroundWindow, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+			}
+			else {
+				menuItemInfo.fState = MFS_CHECKED;
+				::SetWindowLong(g_hForegroundWindow, GWL_EXSTYLE, currentExStyle | WS_EX_TOPMOST);
+				::SetMenuItemInfo(g_hMenu, MENUITEM_TOPMOST_ID, FALSE, &menuItemInfo);
+				::SetWindowPos(g_hForegroundWindow, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+			}
+			break;
+		}
+		case MENUITEM_FULLSCREEN_ID:
+			if (g_bFullScreen) {
+				menuItemInfo.fState = MFS_UNCHECKED;
+				::SetMenuItemInfo(g_hMenu, MENUITEM_FULLSCREEN_ID, FALSE, &menuItemInfo);
+				SetFullScreen(false);
+			}
+			else {
+				menuItemInfo.fState = MFS_CHECKED;
+				::SetMenuItemInfo(g_hMenu, MENUITEM_FULLSCREEN_ID, FALSE, &menuItemInfo);
+				SetFullScreen(true);
+			}
+			break;
+		case MENUITEM_ABOUT_ID:
+			ShowAboutDialog();
+		default:
+			break;
+		}
+			break;
+	}
 	case WM_MOVE: {
 		int x = (int)(short)LOWORD(lParam);
 		int y = (int)(short)HIWORD(lParam);
@@ -967,30 +1096,50 @@ void LoadLogo() {
 	}
 }
 
+bool CreateRightClickMenu() {
+	g_hMenu = ::CreatePopupMenu();
+	if (g_hMenu) {
+		HBITMAP checked = (HBITMAP)::LoadImage(plugin.hDllInstance, MAKEINTRESOURCE(IDB_BITMAP1), IMAGE_BITMAP, 16, 16, LR_MONOCHROME | LR_LOADTRANSPARENT);
+		HBITMAP unchecked = (HBITMAP)::LoadImage(plugin.hDllInstance, MAKEINTRESOURCE(IDB_BITMAP2), IMAGE_BITMAP, 16, 16, LR_MONOCHROME | LR_LOADTRANSPARENT);
+		::SetMenuItemBitmaps(g_hMenu, MENUITEM_TOPMOST_ID, MF_BYCOMMAND, unchecked, checked);
+		if (::AppendMenu(g_hMenu, MF_UNCHECKED|MF_ENABLED | MF_STRING, MENUITEM_TOPMOST_ID, L"Always On Top")) {
+			if (::AppendMenu(g_hMenu, MF_UNCHECKED|MF_ENABLED | MF_STRING, MENUITEM_FULLSCREEN_ID, L"Full Screen")) {
+				if (::AppendMenu(g_hMenu, MF_SEPARATOR, 0, NULL)) {
+					if (::AppendMenu(g_hMenu, MF_ENABLED | MF_STRING, MENUITEM_ABOUT_ID, L"About")) {
+						return true;
+					}
+				}
+			}
+		}
+	}
+	return false;
+}
+
 int init() {
 	GdiplusStartupInput g_gdiPlusStartupInput;
 	GdiplusStartup(&g_gdiPlusToken, &g_gdiPlusStartupInput, NULL);
 	LoadLogo();
 	if (g_hIcon = ::LoadIcon(plugin.hDllInstance, MAKEINTRESOURCE(IDI_ICON1)))
-		if (CreateTransparentBrush())
-			if (RegisterBackgroundWindowClass())
-				if (RegisterForegroundWindowClass())
-					if (CreateBackgroundWindow())
-						if (CreateForegroundWindow()) {
-							::SetStretchBltMode(g_hForegroundWindowDC, COLORONCOLOR);
-							if (CreateBackgroundDC())
-								if (CreateForegroundDCs())
-									if (CreateMaskDC())
-										if (CreateBorderMaskDC())
-											if (CreateScrollBufferDC())
-												if (CreateMaskedForegroundDC()) {
-													if (::SetLayeredWindowAttributes(g_hForegroundWindow, DEFAULT_TRANSPARENT_COLORREF, 255, LWA_COLORKEY))
-														if (::SetLayeredWindowAttributes(g_hBackgroundWindow, 0, g_nBackgroundOpacity, LWA_ALPHA))
-															if (StartCDGProcessingThread()) {
-																ClearCDGBuffer();
-															}
-												}
-						}
+		if(CreateRightClickMenu())
+			if (CreateTransparentBrush())
+				if (RegisterBackgroundWindowClass())
+					if (RegisterForegroundWindowClass())
+						if (CreateBackgroundWindow())
+							if (CreateForegroundWindow()) {
+								::SetStretchBltMode(g_hForegroundWindowDC, COLORONCOLOR);
+								if (CreateBackgroundDC())
+									if (CreateForegroundDCs())
+										if (CreateMaskDC())
+											if (CreateBorderMaskDC())
+												if (CreateScrollBufferDC())
+													if (CreateMaskedForegroundDC()) {
+														if (::SetLayeredWindowAttributes(g_hForegroundWindow, DEFAULT_TRANSPARENT_COLORREF, 255, LWA_COLORKEY))
+															if (::SetLayeredWindowAttributes(g_hBackgroundWindow, 0, g_nBackgroundOpacity, LWA_ALPHA))
+																if (StartCDGProcessingThread()) {
+																	ClearCDGBuffer();
+																}
+													}
+							}
 
 	g_pOriginalWndProc = (WNDPROC)SetWindowLong(plugin.hwndParent, GWL_WNDPROC, (LONG)CdgProWndProc);
 	return 0;
@@ -1044,6 +1193,9 @@ void quit() {
 
 	::UnregisterClass(g_foregroundWindowClassName, plugin.hDllInstance);
 	::UnregisterClass(g_backgroundWindowClassName, plugin.hDllInstance);
+
+	if (g_hMenu)
+		::DestroyMenu(g_hMenu);
 
 	if (g_hIcon)
 		::DeleteObject(g_hIcon);
