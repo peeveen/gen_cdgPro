@@ -104,7 +104,7 @@ DWORD WINAPI CDGProcessor(LPVOID pParams) {
 					// CDG instructions that were processed.
 					// If the 1 bit is set, then the foreground needs redrawn (and pInvalidRect will be set to an area that needs rendered).
 					// If the 2 bit is set, then the entire background needs repainted.
-					// If the 4 bit is set, then the foreground needs repainted.
+					// If the 4 bit is set, then the entire foreground needs repainted.
 					if (result & 0x01)
 						RedrawForeground(&invalidRect);
 					if (result & 0x04)

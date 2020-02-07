@@ -150,10 +150,7 @@ void RedrawForeground(RECT* pInvalidCDGRect) {
 
 void DrawForeground(RECT* pInvalidWindowRect) {
 	static RECT windowClientRect;
-
-	RECT cdgDisplayRect = { 0,0,CDG_WIDTH,CDG_HEIGHT };
 	::GetClientRect(g_hForegroundWindow, &windowClientRect);
-
 	int nScaling = 1 <<g_nSmoothingPasses;
 	double nInvalidRectXFactor = ((double)pInvalidWindowRect->left) / ((double)windowClientRect.right - windowClientRect.left);
 	double nInvalidRectYFactor = ((double)pInvalidWindowRect->top) / ((double)windowClientRect.bottom - windowClientRect.top);
