@@ -18,9 +18,6 @@ SIZE g_logoSize;
 // Canvas pixel offsets for scrolling
 int g_nCanvasXOffset = 0;
 int g_nCanvasYOffset = 0;
-// What section of the CDG canvas needs redrawn?
-RECT g_redrawRect = { 0,0,0,0 };
-HANDLE g_redrawRectMutex = CreateMutex(NULL,FALSE,NULL);
 
 void Perform2xSmoothing(BYTE* pSourceBitmapBits, BYTE* pDestinationBitmapBits, RECT *pInvalidRect, int nSourceBitmapWidth) {
 	// 2x smoothing
@@ -101,12 +98,6 @@ void ScaleRect(RECT* pRect, int factor) {
 	pRect->bottom *= factor;
 }
 
-void SetRedrawRect(RECT* pRedrawRect) {
-	::WaitForSingleObject(g_redrawRectMutex, INFINITE);
-	memcpy(&g_redrawRect, pRedrawRect, sizeof(RECT));
-	::ReleaseMutex(g_redrawRectMutex);
-}
-
 void RefreshScreen(RECT* pInvalidCDGRect) {
 	static RECT outlineRect;
 	HDC hSourceDC = g_hScaledForegroundDCs[g_nSmoothingPasses];
@@ -133,43 +124,37 @@ void RefreshScreen(RECT* pInvalidCDGRect) {
 	::MaskBlt(g_hMaskedForegroundDC, pInvalidCDGRect->left, pInvalidCDGRect->top, invalidCDGRectWidth, invalidCDGRectHeight, hSourceDC, pInvalidCDGRect->left, pInvalidCDGRect->top, g_hBorderMaskBitmap, pInvalidCDGRect->left, pInvalidCDGRect->top, MAKEROP4(SRCCOPY, PATCOPY));
 }
 
+void RedrawForeground(RECT* pInvalidCDGRect) {
+	RECT cdgDisplayRect = { 0,0,CDG_WIDTH,CDG_HEIGHT };
+	if (g_nSmoothingPasses) {
+		// The smoothing algorithms have to operate on adjacent pixels, so we will have to include
+		// an extra pixel on each side of the invalid rectangle. Also, the algorithm works on two
+		// horizontal pixels at a time, and assumes even numbered start/ends ... it would be a more
+		// complex algorithm to cater for odd numbered boundaries for very little increase in speed.
+		// Therefore, we will keep the horizontal offsets even by adding yet ANOTHER pixel.
+		static RECT tempRect;
+		::InflateRect(pInvalidCDGRect, 2, 1);
+		memcpy(&tempRect, pInvalidCDGRect, sizeof(RECT));
+		::IntersectRect(pInvalidCDGRect, &tempRect, &cdgDisplayRect);
+	}
+	int nScaling = 1;
+	for (int f = 0; f < g_nSmoothingPasses && f < (SUPPORTED_SCALING_LEVELS - 1); ++f) {
+		int sourceWidth = CDG_BITMAP_WIDTH * nScaling;
+		Perform2xSmoothing(g_pScaledForegroundBitmapBits[f], g_pScaledForegroundBitmapBits[f + 1], pInvalidCDGRect, sourceWidth);
+		nScaling <<= 1;
+		ScaleRect(pInvalidCDGRect, 2);
+		ScaleRect(&cdgDisplayRect, 2);
+	}
+	RefreshScreen(pInvalidCDGRect);
+}
+
 void DrawForeground(RECT* pInvalidWindowRect) {
 	static RECT windowClientRect;
-	static RECT invalidCDGRect;
-
-	::WaitForSingleObject(g_redrawRectMutex, INFINITE);
-	memcpy(&invalidCDGRect, &g_redrawRect, sizeof(RECT));
-	::ZeroMemory(&g_redrawRect, sizeof(RECT));
-	::ReleaseMutex(g_redrawRectMutex);
 
 	RECT cdgDisplayRect = { 0,0,CDG_WIDTH,CDG_HEIGHT };
 	::GetClientRect(g_hForegroundWindow, &windowClientRect);
-	// If we got here and the redraw rect is {0,0,0,0}, we just need to refresh, not redraw.
-	bool bDrawRequired = !!invalidCDGRect.right;
-	int nScaling = 1;
-	if (bDrawRequired) {
-		if (g_nSmoothingPasses) {
-			// The smoothing algorithms have to operate on adjacent pixels, so we will have to include
-			// an extra pixel on each side of the invalid rectangle. Also, the algorithm works on two
-			// horizontal pixels at a time, and assumes even numbered start/ends ... it would be a more
-			// complex algorithm to cater for odd numbered boundaries for very little increase in speed.
-			// Therefore, we will keep the horizontal offsets even by adding yet ANOTHER pixel.
-			static RECT tempRect;
-			::InflateRect(&invalidCDGRect, 2, 1);
-			memcpy(&tempRect, &invalidCDGRect, sizeof(RECT));
-			::IntersectRect(&invalidCDGRect, &tempRect, &cdgDisplayRect);
-		}
-		for (int f = 0; f < g_nSmoothingPasses && f < (SUPPORTED_SCALING_LEVELS - 1); ++f) {
-			int sourceWidth = CDG_BITMAP_WIDTH * nScaling;
-			Perform2xSmoothing(g_pScaledForegroundBitmapBits[f], g_pScaledForegroundBitmapBits[f + 1], &invalidCDGRect, sourceWidth);
-			nScaling <<= 1;
-			ScaleRect(&invalidCDGRect, 2);
-			ScaleRect(&cdgDisplayRect, 2);
-		}
-		RefreshScreen(&invalidCDGRect);
-	}
-	else
-		nScaling <<=g_nSmoothingPasses;
+
+	int nScaling = 1 <<g_nSmoothingPasses;
 	double nInvalidRectXFactor = ((double)pInvalidWindowRect->left) / ((double)windowClientRect.right - windowClientRect.left);
 	double nInvalidRectYFactor = ((double)pInvalidWindowRect->top) / ((double)windowClientRect.bottom - windowClientRect.top);
 	double nInvalidRectWFactor = ((double)((double)pInvalidWindowRect->right- pInvalidWindowRect->left)) / ((double)windowClientRect.right - windowClientRect.left);

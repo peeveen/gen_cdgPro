@@ -17,17 +17,16 @@ BYTE MemoryPreset(BYTE color) {
 	for(int f=0;f<SUPPORTED_SCALING_LEVELS;++f)
 		memset(g_pScaledForegroundBitmapBits[f], colorByte, ((((CDG_BITMAP_WIDTH >> 1) << f) * (CDG_BITMAP_HEIGHT << f))));
 	g_nLastMemoryPresetColor = color;
-	byte result = 0x01;
+	byte result = 0x05;
 	if (g_nBackgroundDetectionMode == BDM_TOPLEFTPIXEL || g_nBackgroundDetectionMode == BDM_TOPRIGHTPIXEL || g_nBackgroundDetectionMode == BDM_BOTTOMLEFTPIXEL || g_nBackgroundDetectionMode == BDM_BOTTOMRIGHTPIXEL) {
 		// All pixels will be the same value at this point, so use any corner.
 		SetBackgroundColorFromPixel(TOP_LEFT_PIXEL_OFFSET, true);
 		result |= 0x02;
 	}
-	RefreshScreen(NULL);
 	return result;
 }
 
-void BorderPreset(BYTE color) {
+BYTE BorderPreset(BYTE color) {
 	BYTE colorByte = (color << 4) | color;
 	for (int f = 0; f < SUPPORTED_SCALING_LEVELS; ++f) {
 		// Top and bottom edge.
@@ -49,7 +48,7 @@ void BorderPreset(BYTE color) {
 	}
 	// Screen is no longer "blank".
 	g_nLastMemoryPresetColor = -1;
-	RefreshScreen(NULL);
+	return 0x04;
 }
 
 BYTE TileBlock(BYTE* pData, bool isXor, RECT *pInvalidRect) {
@@ -130,11 +129,12 @@ BYTE LoadColorTable(BYTE* pData, bool highTable) {
 		rgbQuads[f] = { blue,green,red,0 };
 	}
 	SetPalette(rgbQuads, nPaletteStartIndex, 8);
-	RefreshScreen(NULL);
-	return 0x01 | (g_nCurrentTransparentIndex >= nPaletteStartIndex && g_nCurrentTransparentIndex < nPaletteStartIndex + 8 ? 0x02 : 0x00);
+	return 0x05 | (g_nCurrentTransparentIndex >= nPaletteStartIndex && g_nCurrentTransparentIndex < nPaletteStartIndex + 8 ? 0x02 : 0x00);
 }
 
-BYTE Scroll(BYTE color, BYTE hScroll, BYTE hScrollOffset, BYTE vScroll, BYTE vScrollOffset, bool copy) {
+BYTE Scroll(BYTE color, BYTE hScroll, BYTE hScrollOffset, BYTE vScroll, BYTE vScrollOffset, bool copy,RECT *pInvalidRect) {
+	// Entire screen needs redrawn after this.
+	*pInvalidRect = { 0,0,CDG_WIDTH,CDG_HEIGHT };
 	int nHScrollPixels = ((hScroll == 2 ? -1 : (hScroll == 1 ? 1 : 0)) * CDG_CELL_WIDTH);
 	int nVScrollPixels = ((vScroll == 2 ? -1 : (vScroll == 1 ? 1 : 0)) * CDG_CELL_HEIGHT);
 	g_nCanvasXOffset = hScrollOffset;

@@ -48,7 +48,7 @@ BYTE ProcessCDGPackets(long songPosition,RECT *pInvalidRect) {
 						result |= MemoryPreset(pCDGPacket->data[0] & 0x0F);
 						break;
 					case CDG_INSTR_BORDER_PRESET:
-						BorderPreset(pCDGPacket->data[0] & 0x0F);
+						result|=BorderPreset(pCDGPacket->data[0] & 0x0F);
 						break;
 					case CDG_INSTR_TILE_BLOCK:
 					case CDG_INSTR_TILE_BLOCK_XOR:
@@ -56,9 +56,7 @@ BYTE ProcessCDGPackets(long songPosition,RECT *pInvalidRect) {
 						break;
 					case CDG_INSTR_SCROLL_COPY:
 					case CDG_INSTR_SCROLL_PRESET:
-						result |= Scroll(pCDGPacket->data[0] & 0x0F, (pCDGPacket->data[1] >> 4) & 0x03, pCDGPacket->data[1] & 0x0F, (pCDGPacket->data[2] >> 4) & 0x03, pCDGPacket->data[2] & 0x0F, instr == CDG_INSTR_SCROLL_COPY);
-						// Entire screen needs redrawn.
-						*pInvalidRect = { 0,0,CDG_WIDTH,CDG_HEIGHT };
+						result |= Scroll(pCDGPacket->data[0] & 0x0F, (pCDGPacket->data[1] >> 4) & 0x03, pCDGPacket->data[1] & 0x0F, (pCDGPacket->data[2] >> 4) & 0x03, pCDGPacket->data[2] & 0x0F, instr == CDG_INSTR_SCROLL_COPY,pInvalidRect);
 						break;
 					case CDG_INSTR_TRANSPARENT_COLOR:
 						// Not implemented.
@@ -104,14 +102,17 @@ DWORD WINAPI CDGProcessor(LPVOID pParams) {
 					byte result = ProcessCDGPackets(::SendMessage(g_hWinampWindow, WM_WA_IPC, 0, IPC_GETOUTPUTTIME),&invalidRect);
 					// Each call to ProcessCDGPackets will return a byte, which is an accumulation of the results from the
 					// CDG instructions that were processed.
-					// If the 1 bit is set, then the foreground needs repainted (and pInvalidRect may be set to an area that needs rendered).
+					// If the 1 bit is set, then the foreground needs redrawn (and pInvalidRect will be set to an area that needs rendered).
 					// If the 2 bit is set, then the entire background needs repainted.
-					if (result & 0x01) {
-						SetRedrawRect(&invalidRect);
-						::RedrawWindow(g_hForegroundWindow, NULL, NULL, RDW_INVALIDATE);
-					}
+					// If the 4 bit is set, then the foreground needs repainted.
+					if (result & 0x01)
+						RedrawForeground(&invalidRect);
+					if (result & 0x04)
+						RefreshScreen(NULL);
+					if (result & 0x05)
+						::RedrawWindow(g_hForegroundWindow, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
 					if (result & 0x02)
-						::RedrawWindow(g_hBackgroundWindow, NULL, NULL, RDW_INVALIDATE);
+						::RedrawWindow(g_hBackgroundWindow, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
 				}
 			}
 			else
@@ -135,7 +136,6 @@ bool StartCDGProcessor() {
 void StopCDGProcessor() {
 	::SetEvent(g_hStopCDGProcessingEvent);
 	::SetEvent(g_hStopCDGThreadEvent);
-	::WaitForSingleObject(g_hCDGProcessingThread, INFINITE);
 
 	::CloseHandle(g_hStopCDGProcessingEvent);
 	::CloseHandle(g_hStoppedCDGProcessingEvent);

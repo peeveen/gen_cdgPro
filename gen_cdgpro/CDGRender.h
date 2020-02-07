@@ -6,7 +6,7 @@ void DrawForeground(RECT *pInvalidWindowRect);
 void LoadLogo();
 void DestroyLogo();
 void RefreshScreen(RECT* pInvalidCDGRect);
-void SetRedrawRect(RECT* pRedrawRect);
+void RedrawForeground(RECT* pRedrawRect);
 
 extern int g_nCanvasXOffset;
 extern int g_nCanvasYOffset;
