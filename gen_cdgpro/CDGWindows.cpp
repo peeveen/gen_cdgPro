@@ -68,8 +68,8 @@ LRESULT CALLBACK ForegroundWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARA
 		if (wParam == VK_ESCAPE)
 			SetFullScreen(false);
 		break;
-	case WM_WINDOWPOSCHANGED:
 	case WM_SHOWWINDOW:
+	case WM_WINDOWPOSCHANGED:
 		::SetWindowPos(g_hBackgroundWindow, hwnd, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
 		break;
 	case WM_NCRBUTTONUP: {
@@ -155,7 +155,9 @@ bool CreateCDGWindow(HWND* phWnd, HDC* phDC, const WCHAR* pszClassName, DWORD ad
 		styles,
 		50, 50,
 		CDG_WIDTH, CDG_HEIGHT,
-		g_hWinampWindow,
+		// We don't want this window to minimize/restore along with WinAmp, so we don't
+		// tell Windows that this is a child of WinAmp.
+		NULL,//g_hWinampWindow,
 		NULL,
 		g_hInstance,
 		NULL);

@@ -114,6 +114,11 @@ bool CreateBackgroundDC() {
 	return CreateBitmapSurface(&g_hBackgroundDC, &g_hBackgroundBitmap, (LPVOID*)&g_pBackgroundBitmapBits, 1, 1, 32);
 }
 
+void ClearForegroundBuffer() {
+	RECT r = { 0,0,CDG_MAXIMUM_BITMAP_WIDTH, CDG_MAXIMUM_BITMAP_HEIGHT };
+	::FillRect(g_hMaskedForegroundDC, &r, g_hTransparentBrush);
+}
+
 bool CreateBitmaps() {
 	return CreateTransparentBrush() &&
 		CreateBackgroundDC() &&

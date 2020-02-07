@@ -10,40 +10,49 @@
 // again before anything else has been drawn, we can ignore it.
 BYTE g_nLastMemoryPresetColor = -1;
 
-BYTE MemoryPreset(BYTE color, BYTE repeat) {
+BYTE MemoryPreset(BYTE color) {
 	if (g_nLastMemoryPresetColor == color)
 		return 0x00;
-	memset(g_pScaledForegroundBitmapBits[0], (color << 4) | color, (CDG_BITMAP_WIDTH * CDG_BITMAP_HEIGHT) / 2);
+	BYTE colorByte = (color << 4) | color;
+	for(int f=0;f<SUPPORTED_SCALING_LEVELS;++f)
+		memset(g_pScaledForegroundBitmapBits[f], colorByte, ((((CDG_BITMAP_WIDTH >> 1) << f) * (CDG_BITMAP_HEIGHT << f))));
 	g_nLastMemoryPresetColor = color;
-	switch (g_nBackgroundDetectionMode) {
-	case BDM_TOPLEFTPIXEL:
-	case BDM_TOPRIGHTPIXEL:
-	case BDM_BOTTOMLEFTPIXEL:
-	case BDM_BOTTOMRIGHTPIXEL:
+	byte result = 0x01;
+	if (g_nBackgroundDetectionMode == BDM_TOPLEFTPIXEL || g_nBackgroundDetectionMode == BDM_TOPRIGHTPIXEL || g_nBackgroundDetectionMode == BDM_BOTTOMLEFTPIXEL || g_nBackgroundDetectionMode == BDM_BOTTOMRIGHTPIXEL) {
 		// All pixels will be the same value at this point, so use any corner.
 		SetBackgroundColorFromPixel(TOP_LEFT_PIXEL_OFFSET, true);
-		return 0x03;
-	default:
-		return 0x01;
+		result |= 0x02;
 	}
+	RefreshScreen();
+	return result;
 }
 
 void BorderPreset(BYTE color) {
 	BYTE colorByte = (color << 4) | color;
-	// Top and bottom edge.
-	BYTE* pForegroundBitmapBits = g_pScaledForegroundBitmapBits[0];
-	memset(pForegroundBitmapBits, colorByte, (CDG_BITMAP_WIDTH * CDG_CELL_HEIGHT) / 2);
-	memset(pForegroundBitmapBits + (((CDG_BITMAP_WIDTH * CDG_BITMAP_HEIGHT) - (CDG_BITMAP_WIDTH * CDG_CELL_HEIGHT)) / 2), colorByte, (CDG_BITMAP_WIDTH * CDG_CELL_HEIGHT) / 2);
-	// Left and right edge.
-	for (int f = CDG_CELL_HEIGHT; f < CDG_CELL_HEIGHT + CDG_CANVAS_HEIGHT; ++f) {
-		memset(pForegroundBitmapBits + ((f * CDG_BITMAP_WIDTH) / 2), colorByte, CDG_CELL_WIDTH / 2);
-		memset(pForegroundBitmapBits + ((f * CDG_BITMAP_WIDTH) / 2) + ((CDG_WIDTH - CDG_CELL_WIDTH) / 2), colorByte, CDG_CELL_WIDTH / 2);
+	for (int f = 0; f < SUPPORTED_SCALING_LEVELS; ++f) {
+		// Top and bottom edge.
+		BYTE* pForegroundBitmapBits = g_pScaledForegroundBitmapBits[f];
+		int bitmapRowBytes = (CDG_BITMAP_WIDTH << f) >>1;
+		int cellHeight = CDG_CELL_HEIGHT << f;
+		memset(pForegroundBitmapBits, colorByte, bitmapRowBytes * cellHeight);
+		int bottomRowOffset = bitmapRowBytes * cellHeight * (CDG_CANVAS_HEIGHT_CELLS + 1);
+		memset(pForegroundBitmapBits+bottomRowOffset, colorByte, bitmapRowBytes * cellHeight);
+
+		// Left and right edge.
+		int cellWidthBytes = (CDG_CELL_WIDTH << f) >>1;
+		int topSideCellOffset = cellHeight * bitmapRowBytes;
+		int rightColumnCellOffset = cellWidthBytes *(CDG_CANVAS_WIDTH_CELLS+1);
+		for (int g = topSideCellOffset; g < bottomRowOffset; g+=bitmapRowBytes) {
+			memset(pForegroundBitmapBits + g, colorByte, cellWidthBytes);
+			memset(pForegroundBitmapBits + g+ rightColumnCellOffset, colorByte, cellWidthBytes);
+		}
 	}
 	// Screen is no longer "blank".
 	g_nLastMemoryPresetColor = -1;
+	RefreshScreen();
 }
 
-BYTE TileBlock(BYTE* pData, bool isXor, RECT** ppInvalidRect) {
+BYTE TileBlock(BYTE* pData, bool isXor, RECT *pInvalidRect) {
 	// 3 byte buffer that we will use to set values in the CDG raster.
 	static BYTE g_blockBuffer[3];
 	BYTE bgColor = pData[0] & 0x0F;
@@ -61,12 +70,10 @@ BYTE TileBlock(BYTE* pData, bool isXor, RECT** ppInvalidRect) {
 	int xPixel = col * CDG_CELL_WIDTH;
 	int yPixel = row * CDG_CELL_HEIGHT;
 	RECT tileRect = { xPixel,yPixel,xPixel + CDG_CELL_WIDTH,yPixel + CDG_CELL_HEIGHT };
-	if (!*ppInvalidRect) {
-		*ppInvalidRect = (RECT*)malloc(sizeof(RECT));
-		memcpy(*ppInvalidRect, &tileRect, sizeof(RECT));
-	}
+	if (!(pInvalidRect->right))
+		memcpy(pInvalidRect, &tileRect, sizeof(RECT));
 	else
-		::UnionRect(*ppInvalidRect, *ppInvalidRect, &tileRect);
+		::UnionRect(pInvalidRect, pInvalidRect, &tileRect);
 	int foregroundBitmapOffset = ((xPixel)+(yPixel * CDG_BITMAP_WIDTH)) / 2;
 	BYTE* pForegroundBitmapBits = g_pScaledForegroundBitmapBits[0];
 	// The remaining 12 bytes in the data field will contain the bitmask of pixels to set.
@@ -120,6 +127,7 @@ BYTE LoadColorTable(BYTE* pData, bool highTable) {
 		rgbQuads[f] = { blue,green,red,0 };
 	}
 	SetPalette(rgbQuads, nPaletteStartIndex, 8);
+	RefreshScreen();
 	return 0x01 | (g_nCurrentTransparentIndex >= nPaletteStartIndex && g_nCurrentTransparentIndex < nPaletteStartIndex + 8 ? 0x02 : 0x00);
 }
 

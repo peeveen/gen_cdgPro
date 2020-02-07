@@ -2,6 +2,7 @@
 
 bool CreateBitmaps();
 void DestroyBitmaps();
+void ClearForegroundBuffer();
 
 extern HDC g_hScaledForegroundDCs[];
 extern BYTE* g_pScaledForegroundBitmapBits[];

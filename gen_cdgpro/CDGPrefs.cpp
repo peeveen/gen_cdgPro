@@ -2,7 +2,7 @@
 #include "CDGPrefs.h"
 
 // Preferences (TODO: INI file or UI).
-int g_nBackgroundOpacity = 160;
+int g_nBackgroundOpacity = 192;
 bool g_bDrawOutline = true;
 bool g_bShowBorder = false;
 // We periodically ask WinAmp how many milliseconds it has played of a song. This works fine

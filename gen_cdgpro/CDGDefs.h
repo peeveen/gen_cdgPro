@@ -23,10 +23,13 @@ typedef struct {
 #define CDG_HEIGHT (216)
 
 // The CDG graphics area is divided into a 50x18 grid of 6x12 pixel cells.
+// The outermost cells are part of the non-visible border area.
 #define CDG_WIDTH_CELLS (50)
 #define CDG_HEIGHT_CELLS (18)
 #define CDG_CELL_WIDTH (6)
 #define CDG_CELL_HEIGHT (12)
+#define CDG_CANVAS_WIDTH_CELLS (48)
+#define CDG_CANVAS_HEIGHT_CELLS (16)
 
 // The outer edges of this area are not shown on screen, but are managed in memory (for scrolling
 // images into the visible area, etc). This is the size of the visible central portion.
