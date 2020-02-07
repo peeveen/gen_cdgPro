@@ -107,7 +107,7 @@ DWORD WINAPI CDGProcessor(LPVOID pParams) {
 					// If the 1 bit is set, then the foreground needs repainted (and pInvalidRect may be set to an area that needs rendered).
 					// If the 2 bit is set, then the entire background needs repainted.
 					if (result & 0x01) {
-						memcpy(&g_redrawRect, &invalidRect, sizeof(RECT));
+						SetRedrawRect(&invalidRect);
 						::RedrawWindow(g_hForegroundWindow, NULL, NULL, RDW_INVALIDATE);
 					}
 					if (result & 0x02)

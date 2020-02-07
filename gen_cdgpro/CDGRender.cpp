@@ -20,6 +20,7 @@ int g_nCanvasXOffset = 0;
 int g_nCanvasYOffset = 0;
 // What section of the CDG canvas needs redrawn?
 RECT g_redrawRect = { 0,0,0,0 };
+HANDLE g_redrawRectMutex = CreateMutex(NULL,FALSE,NULL);
 
 void Perform2xSmoothing(BYTE* pSourceBitmapBits, BYTE* pDestinationBitmapBits, RECT *pInvalidRect, int nSourceBitmapWidth) {
 	// 2x smoothing
@@ -100,6 +101,12 @@ void ScaleRect(RECT* pRect, int factor) {
 	pRect->bottom *= factor;
 }
 
+void SetRedrawRect(RECT* pRedrawRect) {
+	::WaitForSingleObject(g_redrawRectMutex, INFINITE);
+	memcpy(&g_redrawRect, pRedrawRect, sizeof(RECT));
+	::ReleaseMutex(g_redrawRectMutex);
+}
+
 void RefreshScreen(RECT* pInvalidCDGRect) {
 	static RECT outlineRect;
 	HDC hSourceDC = g_hScaledForegroundDCs[g_nSmoothingPasses];
@@ -114,8 +121,10 @@ void RefreshScreen(RECT* pInvalidCDGRect) {
 	// If drawing outlines, we will have to, possibly yet again, inflate the invalid rect to encompass the outline.
 	memcpy(&outlineRect, pInvalidCDGRect, sizeof(RECT));
 	if (g_bDrawOutline) {
+		static RECT tempRect;
 		::InflateRect(&outlineRect, nScaling, nScaling);
-		::IntersectRect(&outlineRect, &outlineRect, &bitmapRect);
+		memcpy(&tempRect, &outlineRect, sizeof(RECT));
+		::IntersectRect(&outlineRect, &tempRect, &bitmapRect);
 	}
 	for (int f = -nScaling; f <= nScaling; ++f)
 		for (int g = -nScaling; g <= nScaling; ++g)
@@ -127,22 +136,28 @@ void RefreshScreen(RECT* pInvalidCDGRect) {
 void DrawForeground(RECT* pInvalidWindowRect) {
 	static RECT windowClientRect;
 	static RECT invalidCDGRect;
+
+	::WaitForSingleObject(g_redrawRectMutex, INFINITE);
+	memcpy(&invalidCDGRect, &g_redrawRect, sizeof(RECT));
+	::ZeroMemory(&g_redrawRect, sizeof(RECT));
+	::ReleaseMutex(g_redrawRectMutex);
+
 	RECT cdgDisplayRect = { 0,0,CDG_WIDTH,CDG_HEIGHT };
 	::GetClientRect(g_hForegroundWindow, &windowClientRect);
 	// If we got here and the redraw rect is {0,0,0,0}, we just need to refresh, not redraw.
-	bool bDrawRequired = !!g_redrawRect.right;
+	bool bDrawRequired = !!invalidCDGRect.right;
 	int nScaling = 1;
 	if (bDrawRequired) {
-		memcpy(&invalidCDGRect, &g_redrawRect, sizeof(RECT));
-		::ZeroMemory(&g_redrawRect, sizeof(RECT));
 		if (g_nSmoothingPasses) {
 			// The smoothing algorithms have to operate on adjacent pixels, so we will have to include
 			// an extra pixel on each side of the invalid rectangle. Also, the algorithm works on two
 			// horizontal pixels at a time, and assumes even numbered start/ends ... it would be a more
 			// complex algorithm to cater for odd numbered boundaries for very little increase in speed.
 			// Therefore, we will keep the horizontal offsets even by adding yet ANOTHER pixel.
+			static RECT tempRect;
 			::InflateRect(&invalidCDGRect, 2, 1);
-			::IntersectRect(&invalidCDGRect, &invalidCDGRect, &cdgDisplayRect);
+			memcpy(&tempRect, &invalidCDGRect, sizeof(RECT));
+			::IntersectRect(&invalidCDGRect, &tempRect, &cdgDisplayRect);
 		}
 		for (int f = 0; f < g_nSmoothingPasses && f < (SUPPORTED_SCALING_LEVELS - 1); ++f) {
 			int sourceWidth = CDG_BITMAP_WIDTH * nScaling;
