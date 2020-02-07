@@ -23,7 +23,7 @@ BYTE MemoryPreset(BYTE color) {
 		SetBackgroundColorFromPixel(TOP_LEFT_PIXEL_OFFSET, true);
 		result |= 0x02;
 	}
-	RefreshScreen();
+	RefreshScreen(NULL);
 	return result;
 }
 
@@ -49,7 +49,7 @@ void BorderPreset(BYTE color) {
 	}
 	// Screen is no longer "blank".
 	g_nLastMemoryPresetColor = -1;
-	RefreshScreen();
+	RefreshScreen(NULL);
 }
 
 BYTE TileBlock(BYTE* pData, bool isXor, RECT *pInvalidRect) {
@@ -127,7 +127,7 @@ BYTE LoadColorTable(BYTE* pData, bool highTable) {
 		rgbQuads[f] = { blue,green,red,0 };
 	}
 	SetPalette(rgbQuads, nPaletteStartIndex, 8);
-	RefreshScreen();
+	RefreshScreen(NULL);
 	return 0x01 | (g_nCurrentTransparentIndex >= nPaletteStartIndex && g_nCurrentTransparentIndex < nPaletteStartIndex + 8 ? 0x02 : 0x00);
 }
 

@@ -72,8 +72,8 @@ LRESULT CALLBACK CdgProWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lPara
 				if (!isPlayingResult) {
 					ResetProcessor();
 					::ZeroMemory(g_pScaledForegroundBitmapBits[0], (CDG_BITMAP_WIDTH * CDG_BITMAP_HEIGHT) / 2);
-					::RedrawWindow(g_hForegroundWindow, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
-					::RedrawWindow(g_hBackgroundWindow, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
+					::RedrawWindow(g_hForegroundWindow, NULL, NULL, RDW_INVALIDATE);
+					::RedrawWindow(g_hBackgroundWindow, NULL, NULL, RDW_INVALIDATE);
 				}
 			}
 			break;

@@ -100,13 +100,39 @@ void ScaleRect(RECT* pRect, int factor) {
 	pRect->bottom *= factor;
 }
 
+void RefreshScreen(RECT* pInvalidCDGRect) {
+	static RECT outlineRect;
+	HDC hSourceDC = g_hScaledForegroundDCs[g_nSmoothingPasses];
+	int nScaling = 1<<g_nSmoothingPasses;
+	RECT bitmapRect = { 0,0,CDG_BITMAP_WIDTH * nScaling,CDG_BITMAP_HEIGHT * nScaling };
+	if (!pInvalidCDGRect)
+		pInvalidCDGRect = &bitmapRect;
+	int invalidCDGRectWidth = pInvalidCDGRect->right - pInvalidCDGRect->left;
+	int invalidCDGRectHeight = pInvalidCDGRect->bottom - pInvalidCDGRect->top;
+	//	::BitBlt(g_hMaskDC, 0, 0, CDG_MAXIMUM_BITMAP_WIDTH, CDG_MAXIMUM_BITMAP_HEIGHT, g_hScaledForegroundDCs[SUPPORTED_SCALING_LEVELS - 1], 0, 0, SRCCOPY);
+//	::ZeroMemory(g_pBorderMaskBitmapBits, (CDG_MAXIMUM_BITMAP_WIDTH * CDG_MAXIMUM_BITMAP_HEIGHT) / 8);
+//	::BitBlt(g_hBorderMaskDC, 0, 0, CDG_MAXIMUM_BITMAP_WIDTH, CDG_MAXIMUM_BITMAP_HEIGHT, g_hMaskDC, 0, 0, SRCPAINT);
+//	::MaskBlt(g_hMaskedForegroundDC, 0, 0, CDG_MAXIMUM_BITMAP_WIDTH, CDG_MAXIMUM_BITMAP_HEIGHT, g_hScaledForegroundDCs[SUPPORTED_SCALING_LEVELS - 1], 0, 0, g_hBorderMaskBitmap, 0, 0, MAKEROP4(SRCCOPY, PATCOPY));
+	::BitBlt(g_hMaskDC, pInvalidCDGRect->left, pInvalidCDGRect->top, invalidCDGRectWidth, invalidCDGRectHeight, hSourceDC, pInvalidCDGRect->left, pInvalidCDGRect->top, SRCCOPY);
+	::ZeroMemory(g_pBorderMaskBitmapBits, (CDG_MAXIMUM_BITMAP_WIDTH * CDG_MAXIMUM_BITMAP_HEIGHT) / 8);
+	// If drawing outlines, we will have to, possibly yet again, inflate the invalid rect to encompass the outline.
+	memcpy(&outlineRect, pInvalidCDGRect, sizeof(RECT));
+	if (g_bDrawOutline) {
+		::InflateRect(&outlineRect, nScaling, nScaling);
+		::IntersectRect(&outlineRect, &outlineRect, &bitmapRect);
+	}
+	for (int f = -nScaling; f <= nScaling; ++f)
+		for (int g = -nScaling; g <= nScaling; ++g)
+			if (g_bDrawOutline || (!f && !g))
+				::BitBlt(g_hBorderMaskDC, f + outlineRect.left, g + outlineRect.top, outlineRect.right - outlineRect.left, outlineRect.bottom - outlineRect.top, g_hMaskDC, outlineRect.left, outlineRect.top, SRCPAINT);
+	::MaskBlt(g_hMaskedForegroundDC, pInvalidCDGRect->left, pInvalidCDGRect->top, invalidCDGRectWidth, invalidCDGRectHeight, hSourceDC, pInvalidCDGRect->left, pInvalidCDGRect->top, g_hBorderMaskBitmap, pInvalidCDGRect->left, pInvalidCDGRect->top, MAKEROP4(SRCCOPY, PATCOPY));
+}
+
 void DrawForeground(RECT* pInvalidWindowRect) {
 	static RECT windowClientRect;
 	static RECT invalidCDGRect;
-	static RECT outlineRect;
 	RECT cdgDisplayRect = { 0,0,CDG_WIDTH,CDG_HEIGHT };
 	::GetClientRect(g_hForegroundWindow, &windowClientRect);
-	HDC hSourceDC = g_hScaledForegroundDCs[0];
 	// If we got here and the redraw rect is {0,0,0,0}, we just need to refresh, not redraw.
 	bool bDrawRequired = !!g_redrawRect.right;
 	int nScaling = 1;
@@ -128,21 +154,8 @@ void DrawForeground(RECT* pInvalidWindowRect) {
 			nScaling <<= 1;
 			ScaleRect(&invalidCDGRect, 2);
 			ScaleRect(&cdgDisplayRect, 2);
-			hSourceDC = g_hScaledForegroundDCs[f + 1];
 		}
-		::BitBlt(g_hMaskDC, invalidCDGRect.left, invalidCDGRect.top, invalidCDGRect.right - invalidCDGRect.left, invalidCDGRect.bottom - invalidCDGRect.top, hSourceDC, invalidCDGRect.left, invalidCDGRect.top, SRCCOPY);
-		::ZeroMemory(g_pBorderMaskBitmapBits, (CDG_MAXIMUM_BITMAP_WIDTH * CDG_MAXIMUM_BITMAP_HEIGHT) / 8);
-		// If drawing outlines, we will have to, possibly yet again, inflate the invalid rect to encompass the outline.
-		memcpy(&outlineRect, &invalidCDGRect, sizeof(RECT));
-		if (g_bDrawOutline) {
-			::InflateRect(&outlineRect, nScaling, nScaling);
-			::IntersectRect(&outlineRect, &outlineRect, &cdgDisplayRect);
-		}
-		for (int f = -nScaling; f <= nScaling; ++f)
-			for (int g = -nScaling; g <= nScaling; ++g)
-				if (g_bDrawOutline || (!f && !g))
-					::BitBlt(g_hBorderMaskDC, f + outlineRect.left, g + outlineRect.top, outlineRect.right - outlineRect.left, outlineRect.bottom - outlineRect.top, g_hMaskDC, outlineRect.left, outlineRect.top, SRCPAINT);
-		::MaskBlt(g_hMaskedForegroundDC, invalidCDGRect.left, invalidCDGRect.top, invalidCDGRect.right - invalidCDGRect.left, invalidCDGRect.bottom - invalidCDGRect.top, hSourceDC, invalidCDGRect.left, invalidCDGRect.top, g_hBorderMaskBitmap, invalidCDGRect.left, invalidCDGRect.top, MAKEROP4(SRCCOPY, PATCOPY));
+		RefreshScreen(&invalidCDGRect);
 	}
 	else
 		nScaling <<=g_nSmoothingPasses;
@@ -163,13 +176,6 @@ void DrawForeground(RECT* pInvalidWindowRect) {
 		Graphics g(g_hForegroundWindowDC);
 		g.DrawImage(g_pLogoImage, (windowWidth - g_logoSize.cx) / 2, (windowHeight - g_logoSize.cy) / 2, g_logoSize.cx, g_logoSize.cy);
 	}
-}
-
-void RefreshScreen() {
-	::BitBlt(g_hMaskDC, 0, 0, CDG_MAXIMUM_BITMAP_WIDTH, CDG_MAXIMUM_BITMAP_HEIGHT, g_hScaledForegroundDCs[SUPPORTED_SCALING_LEVELS - 1], 0, 0, SRCCOPY);
-	::ZeroMemory(g_pBorderMaskBitmapBits, (CDG_MAXIMUM_BITMAP_WIDTH * CDG_MAXIMUM_BITMAP_HEIGHT) / 8);
-	::BitBlt(g_hBorderMaskDC, 0, 0, CDG_MAXIMUM_BITMAP_WIDTH, CDG_MAXIMUM_BITMAP_HEIGHT, g_hMaskDC, 0, 0, SRCPAINT);
-	::MaskBlt(g_hMaskedForegroundDC, 0, 0, CDG_MAXIMUM_BITMAP_WIDTH, CDG_MAXIMUM_BITMAP_HEIGHT, g_hScaledForegroundDCs[SUPPORTED_SCALING_LEVELS - 1], 0, 0, g_hBorderMaskBitmap, 0, 0, MAKEROP4(SRCCOPY, PATCOPY));
 }
 
 void LoadLogo() {

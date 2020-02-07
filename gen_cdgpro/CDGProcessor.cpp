@@ -97,9 +97,9 @@ DWORD WINAPI CDGProcessor(LPVOID pParams) {
 			break;
 		}
 		for (;;) {
-			::ZeroMemory(&invalidRect, sizeof(RECT));
 			waitResult = ::WaitForMultipleObjects(2, waitHandles, FALSE, SCREEN_REFRESH_MS);
 			if (waitResult == WAIT_TIMEOUT) {
+				::ZeroMemory(&invalidRect, sizeof(RECT));
 				if (g_nCDGPC < g_nCDGPackets) {
 					byte result = ProcessCDGPackets(::SendMessage(g_hWinampWindow, WM_WA_IPC, 0, IPC_GETOUTPUTTIME),&invalidRect);
 					// Each call to ProcessCDGPackets will return a byte, which is an accumulation of the results from the
@@ -108,10 +108,10 @@ DWORD WINAPI CDGProcessor(LPVOID pParams) {
 					// If the 2 bit is set, then the entire background needs repainted.
 					if (result & 0x01) {
 						memcpy(&g_redrawRect, &invalidRect, sizeof(RECT));
-						::RedrawWindow(g_hForegroundWindow, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
+						::RedrawWindow(g_hForegroundWindow, NULL, NULL, RDW_INVALIDATE);
 					}
 					if (result & 0x02)
-						::RedrawWindow(g_hBackgroundWindow, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
+						::RedrawWindow(g_hBackgroundWindow, NULL, NULL, RDW_INVALIDATE);
 				}
 			}
 			else
