@@ -109,10 +109,6 @@ void RefreshScreen(RECT* pInvalidCDGRect) {
 		pInvalidCDGRect = &bitmapRect;
 	int invalidCDGRectWidth = pInvalidCDGRect->right - pInvalidCDGRect->left;
 	int invalidCDGRectHeight = pInvalidCDGRect->bottom - pInvalidCDGRect->top;
-	//	::BitBlt(g_hMaskDC, 0, 0, CDG_MAXIMUM_BITMAP_WIDTH, CDG_MAXIMUM_BITMAP_HEIGHT, g_hScaledForegroundDCs[SUPPORTED_SCALING_LEVELS - 1], 0, 0, SRCCOPY);
-//	::ZeroMemory(g_pBorderMaskBitmapBits, (CDG_MAXIMUM_BITMAP_WIDTH * CDG_MAXIMUM_BITMAP_HEIGHT) / 8);
-//	::BitBlt(g_hBorderMaskDC, 0, 0, CDG_MAXIMUM_BITMAP_WIDTH, CDG_MAXIMUM_BITMAP_HEIGHT, g_hMaskDC, 0, 0, SRCPAINT);
-//	::MaskBlt(g_hMaskedForegroundDC, 0, 0, CDG_MAXIMUM_BITMAP_WIDTH, CDG_MAXIMUM_BITMAP_HEIGHT, g_hScaledForegroundDCs[SUPPORTED_SCALING_LEVELS - 1], 0, 0, g_hBorderMaskBitmap, 0, 0, MAKEROP4(SRCCOPY, PATCOPY));
 	::BitBlt(g_hMaskDC, pInvalidCDGRect->left, pInvalidCDGRect->top, invalidCDGRectWidth, invalidCDGRectHeight, hSourceDC, pInvalidCDGRect->left, pInvalidCDGRect->top, SRCCOPY);
 	::ZeroMemory(g_pBorderMaskBitmapBits, (CDG_MAXIMUM_BITMAP_WIDTH * CDG_MAXIMUM_BITMAP_HEIGHT) / 8);
 	// If drawing outlines, we will have to, possibly yet again, inflate the invalid rect to encompass the outline.
