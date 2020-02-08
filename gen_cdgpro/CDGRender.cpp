@@ -148,10 +148,12 @@ void DrawForeground(RECT* pInvalidWindowRect) {
 	static RECT windowClientRect;
 	::GetClientRect(g_hForegroundWindow, &windowClientRect);
 	int nScaling = 1 <<g_nSmoothingPasses;
-	double nInvalidRectXFactor = ((double)pInvalidWindowRect->left) / ((double)windowClientRect.right - windowClientRect.left);
-	double nInvalidRectYFactor = ((double)pInvalidWindowRect->top) / ((double)windowClientRect.bottom - windowClientRect.top);
-	double nInvalidRectWFactor = ((double)((double)pInvalidWindowRect->right- pInvalidWindowRect->left)) / ((double)windowClientRect.right - windowClientRect.left);
-	double nInvalidRectHFactor = ((double)((double)pInvalidWindowRect->bottom- pInvalidWindowRect->top)) / ((double)windowClientRect.bottom - windowClientRect.top);
+	double windowClientRectWidth = windowClientRect.right - windowClientRect.left;
+	double windowClientRectHeight = windowClientRect.bottom - windowClientRect.top;
+	double nInvalidRectXFactor = ((double)pInvalidWindowRect->left) / windowClientRectWidth;
+	double nInvalidRectYFactor = ((double)pInvalidWindowRect->top) / windowClientRectHeight;
+	double nInvalidRectWFactor = ((double)((double)pInvalidWindowRect->right- pInvalidWindowRect->left)) / windowClientRectWidth;
+	double nInvalidRectHFactor = ((double)((double)pInvalidWindowRect->bottom- pInvalidWindowRect->top)) / windowClientRectHeight;
 	int nCanvasSourceX = (int)(CDG_CANVAS_WIDTH * nScaling * nInvalidRectXFactor) + ((CDG_CANVAS_X + g_nCanvasXOffset) * nScaling);
 	int nCanvasSourceY = (int)(CDG_CANVAS_HEIGHT * nScaling * nInvalidRectYFactor) + ((CDG_CANVAS_Y + g_nCanvasYOffset) * nScaling);
 	int nCanvasWidth = (int)(CDG_CANVAS_WIDTH * nScaling * nInvalidRectWFactor);
@@ -159,9 +161,11 @@ void DrawForeground(RECT* pInvalidWindowRect) {
 	int nInvalidRectWidth = pInvalidWindowRect->right - pInvalidWindowRect->left;
 	int nInvalidRectHeight = pInvalidWindowRect->bottom - pInvalidWindowRect->top;
 	::FillRect(g_hForegroundWindowDC, pInvalidWindowRect, g_hTransparentBrush);
-	// TODO: Scale this margin.
-	int nScaledMargin = g_nMargin;
-	::InflateRect(pInvalidWindowRect, -nScaledMargin, -nScaledMargin);
-	::StretchBlt(g_hForegroundWindowDC, pInvalidWindowRect->left, pInvalidWindowRect->top, nInvalidRectWidth - (nScaledMargin << 1), nInvalidRectHeight - (nScaledMargin << 1), g_hMaskedForegroundDC, nCanvasSourceX, nCanvasSourceY, nCanvasWidth, nCanvasHeight, SRCCOPY);
+	double scaleXMultiplier = windowClientRectWidth / CDG_CANVAS_WIDTH;
+	double scaleYMultiplier = windowClientRectHeight / CDG_CANVAS_HEIGHT;
+	int nScaledXMargin = (int)(g_nMargin * scaleXMultiplier);
+	int nScaledYMargin = (int)(g_nMargin * scaleYMultiplier);
+	::InflateRect(pInvalidWindowRect, -nScaledXMargin, -nScaledYMargin);
+	::StretchBlt(g_hForegroundWindowDC, pInvalidWindowRect->left, pInvalidWindowRect->top, nInvalidRectWidth - (nScaledXMargin << 1), nInvalidRectHeight - (nScaledYMargin << 1), g_hMaskedForegroundDC, nCanvasSourceX, nCanvasSourceY, nCanvasWidth, nCanvasHeight, SRCCOPY);
 }
 
