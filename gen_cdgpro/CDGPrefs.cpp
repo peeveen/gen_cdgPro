@@ -7,8 +7,8 @@
 
 // Preferences (TODO: INI file or UI).
 int g_nBackgroundOpacity = 192;
+// Draw an outline around the foreground graphics for increased visibility?
 bool g_bDrawOutline = true;
-bool g_bShowBorder = false;
 // We periodically ask WinAmp how many milliseconds it has played of a song. This works fine
 // but as time goes on, it starts to get it wrong, falling behind by a tiny amount each time.
 // To keep the display in sync, we will multiply whatever WinAmp tells us by this amount.
@@ -36,11 +36,11 @@ void SetPref(WCHAR* pszPrefLine, const WCHAR* pszPrefName, void* pDestVal, void 
 	if (!wcsncmp(pszPrefLine, pszPrefName, len)) {
 		wcscpy_s(pszPrefLine, PREF_BUFFER_SIZE,pszPrefLine + len);
 		TrimLeading(pszPrefLine);
-		if (pszPrefLine[0] == '=') {
+		while (wcslen(pszPrefLine) && pszPrefLine[0] == '=')
 			++pszPrefLine;
-			TrimLeading(pszPrefLine);
+		TrimLeading(pszPrefLine);
+		if(wcslen(pszPrefLine))
 			pFunc(pszPrefLine, pDestVal);
-		}
 	}
 }
 

@@ -13,7 +13,6 @@ void ReadPrefs();
 // Preferences (TODO: INI file or UI).
 extern int g_nBackgroundOpacity;
 extern bool g_bDrawOutline;
-extern bool g_bShowBorder;
 // We periodically ask WinAmp how many milliseconds it has played of a song. This works fine
 // but as time goes on, it starts to get it wrong, falling behind by a tiny amount each time.
 // To keep the display in sync, we will multiply whatever WinAmp tells us by this amount.
