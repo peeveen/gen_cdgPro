@@ -240,12 +240,12 @@ ATOM RegisterLogoWindowClass() {
 	return RegisterWindowClass(g_logoWindowClassName, (WNDPROC)LogoWindowProc);
 }
 
-bool CreateCDGWindow(HWND* phWnd, HDC* phDC, const WCHAR* pszClassName, DWORD additionalStyles, DWORD additionalExStyles,LPCTSTR pszCaption) {
+bool CreateCDGWindow(HWND* phWnd, HDC* phDC, const WCHAR* pszClassName, DWORD additionalStyles, DWORD additionalExStyles) {
 	DWORD styles = WS_VISIBLE | additionalStyles;
 	*phWnd = CreateWindowEx(
 		WS_EX_LAYERED | additionalExStyles,
 		pszClassName,
-		pszCaption,
+		g_pszWindowCaption,
 		styles,
 		50, 50,
 		CDG_WIDTH, CDG_HEIGHT,
@@ -275,15 +275,15 @@ bool CreateCDGWindow(HWND* phWnd, HDC* phDC, const WCHAR* pszClassName, DWORD ad
 }
 
 bool CreateForegroundWindow() {
-	return CreateCDGWindow(&g_hForegroundWindow, &g_hForegroundWindowDC, g_foregroundWindowClassName, WS_THICKFRAME, WS_EX_NOACTIVATE, g_pszWindowCaption);
+	return CreateCDGWindow(&g_hForegroundWindow, &g_hForegroundWindowDC, g_foregroundWindowClassName, WS_THICKFRAME, WS_EX_NOACTIVATE);
 }
 
 bool CreateBackgroundWindow() {
-	return CreateCDGWindow(&g_hBackgroundWindow, &g_hBackgroundWindowDC, g_backgroundWindowClassName, 0, WS_EX_NOACTIVATE, g_pszWindowCaption);
+	return CreateCDGWindow(&g_hBackgroundWindow, &g_hBackgroundWindowDC, g_backgroundWindowClassName, 0, WS_EX_NOACTIVATE);
 }
 
 bool CreateLogoWindow() {
-	return CreateCDGWindow(&g_hLogoWindow, &g_hLogoWindowDC, g_logoWindowClassName, 0, WS_EX_APPWINDOW, g_pszWindowCaption);
+	return CreateCDGWindow(&g_hLogoWindow, &g_hLogoWindowDC, g_logoWindowClassName, 0, WS_EX_APPWINDOW);
 }
 
 void UnregisterWindowClasses() {

@@ -142,37 +142,38 @@ void ClearForegroundBuffer() {
 	::FillRect(g_hMaskedForegroundDC, &r, g_hTransparentBrush);
 }
 
-SIZE LoadLogo() {
+bool LoadLogo() {
 	g_pLogoImage = new Image(g_pszLogoPath);
 	if (g_pLogoImage->GetLastStatus() == Ok) {
-		return g_logoSize = { (LONG)g_pLogoImage->GetWidth(),(LONG)g_pLogoImage->GetHeight() };
+		g_logoSize = { (LONG)g_pLogoImage->GetWidth(),(LONG)g_pLogoImage->GetHeight() };
+		return true;
 	}
 	delete g_pLogoImage;
 	g_pLogoImage = NULL;
-	SIZE noSize = { 0,0 };
-	return noSize;
+	return false;
 }
 
 bool CreateLogoDC() {
-	SIZE logoSize = LoadLogo();
-	if (logoSize.cx == 0)
-		return true;
-	bool result = false;
+	// If there is no logo, we will use a 1x1 transparent pixel instead.
+	bool logoFound = LoadLogo();
+	if (!logoFound)
+		g_logoSize = { 1,1 };
 	g_hLogoDC = ::CreateCompatibleDC(g_hScreenDC);
 	if (g_hLogoDC) {
-		g_hLogoBitmap = ::CreateCompatibleBitmap(g_hScreenDC, logoSize.cx, logoSize.cy);
+		g_hLogoBitmap = ::CreateCompatibleBitmap(g_hScreenDC, g_logoSize.cx, g_logoSize.cy );
 		if (g_hLogoBitmap) {
 			::SelectObject(g_hLogoDC, g_hLogoBitmap);
-			RECT r;
-			::GetClientRect(g_hLogoWindow, &r);
-			int windowWidth = r.right - r.left;
-			int windowHeight = r.bottom - r.top;
 			Graphics g(g_hLogoDC);
-			g.DrawImage(g_pLogoImage, 0, 0, g_logoSize.cx, g_logoSize.cy);
-			result = true;
+			if (logoFound)
+				g.DrawImage(g_pLogoImage, 0, 0, g_logoSize.cx, g_logoSize.cy);
+			else {
+				SolidBrush sb(Color::MakeARGB(0, 0, 0, 0));
+				g.FillRectangle(&sb, 0, 0, g_logoSize.cx, g_logoSize.cy);
+			}
+			return true;
 		}
 	}
-	return result;
+	return false;
 }
 
 bool CreateBitmaps() {

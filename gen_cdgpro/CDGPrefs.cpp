@@ -18,4 +18,4 @@ int g_nSmoothingPasses = 2;
 // Size of margin.
 int g_nMargin = 15;
 // Logo to display when there is no song playing.
-const WCHAR* g_pszLogoPath = L"C:\\Users\\steve\\Desktop\\karaokeLogo3.png";
+const WCHAR* g_pszLogoPath = L"C:\\Useers\\steve\\Desktop\\karaokeLogo3.png";
