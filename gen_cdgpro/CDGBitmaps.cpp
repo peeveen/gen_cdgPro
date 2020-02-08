@@ -1,5 +1,12 @@
 #include "stdafx.h"
 #include "CDGWindows.h"
+#include "CDGPrefs.h"
+#include <objidl.h>
+#include <stdlib.h>
+#include <gdiplus.h>
+#include <gdipluscolor.h>
+#pragma comment (lib,"Gdiplus.lib")
+using namespace Gdiplus;
 
 // Brush filled with the transparency color.
 HBRUSH g_hTransparentBrush;
@@ -31,6 +38,22 @@ unsigned int* g_pBackgroundBitmapBits = NULL;
 HDC g_hScrollBufferDC = NULL;
 HBITMAP g_hScrollBufferBitmap = NULL;
 BYTE* g_pScrollBufferBitmapBits = NULL;
+
+// The DC and bitmap for the logo
+HDC g_hLogoDC = NULL;
+HBITMAP g_hLogoBitmap = NULL;
+
+// The DC for the screen.
+HDC g_hScreenDC = NULL;
+
+// Logo image
+Image* g_pLogoImage = NULL;
+SIZE g_logoSize;
+
+void DestroyLogo() {
+	if (g_pLogoImage)
+		delete g_pLogoImage;
+}
 
 bool CreateTransparentBrush() {
 	g_hTransparentBrush = ::CreateSolidBrush(DEFAULT_TRANSPARENT_COLORREF);
@@ -119,13 +142,48 @@ void ClearForegroundBuffer() {
 	::FillRect(g_hMaskedForegroundDC, &r, g_hTransparentBrush);
 }
 
+SIZE LoadLogo() {
+	g_pLogoImage = new Image(g_pszLogoPath);
+	if (g_pLogoImage->GetLastStatus() == Ok) {
+		return g_logoSize = { (LONG)g_pLogoImage->GetWidth(),(LONG)g_pLogoImage->GetHeight() };
+	}
+	delete g_pLogoImage;
+	g_pLogoImage = NULL;
+	SIZE noSize = { 0,0 };
+	return noSize;
+}
+
+bool CreateLogoDC() {
+	SIZE logoSize = LoadLogo();
+	if (logoSize.cx == 0)
+		return true;
+	bool result = false;
+	g_hLogoDC = ::CreateCompatibleDC(g_hScreenDC);
+	if (g_hLogoDC) {
+		g_hLogoBitmap = ::CreateCompatibleBitmap(g_hScreenDC, logoSize.cx, logoSize.cy);
+		if (g_hLogoBitmap) {
+			::SelectObject(g_hLogoDC, g_hLogoBitmap);
+			RECT r;
+			::GetClientRect(g_hLogoWindow, &r);
+			int windowWidth = r.right - r.left;
+			int windowHeight = r.bottom - r.top;
+			Graphics g(g_hLogoDC);
+			g.DrawImage(g_pLogoImage, 0, 0, g_logoSize.cx, g_logoSize.cy);
+			result = true;
+		}
+	}
+	return result;
+}
+
 bool CreateBitmaps() {
+	g_hScreenDC = ::GetDC(NULL);
 	return CreateTransparentBrush() &&
 		CreateBackgroundDC() &&
 		CreateForegroundDCs() &&
 		CreateMaskDC() &&
 		CreateBorderMaskDC() &&
 		CreateScrollBufferDC() &&
+		CreateLogoDC() &&
 		CreateMaskedForegroundDC();
 }
 
@@ -136,15 +194,18 @@ void DeleteDCAndBitmap(HDC hDC, HBITMAP hBitmap) {
 		::DeleteObject(hBitmap);
 }
 
-bool DestroyBitmaps() {
-	DeleteDCAndBitmap(g_hBackgroundDC, g_hBackgroundBitmap);
+void DestroyBitmaps() {
 	DeleteDCAndBitmap(g_hMaskDC, g_hMaskBitmap);
 	DeleteDCAndBitmap(g_hBorderMaskDC, g_hBorderMaskBitmap);
 	DeleteDCAndBitmap(g_hMaskedForegroundDC, g_hMaskedForegroundBitmap);
 	DeleteDCAndBitmap(g_hScrollBufferDC, g_hScrollBufferBitmap);
 	DeleteDCAndBitmap(g_hScrollBufferDC, g_hScrollBufferBitmap);
+	DeleteDCAndBitmap(g_hLogoDC, g_hLogoBitmap);
+	DeleteDCAndBitmap(g_hBackgroundDC, g_hBackgroundBitmap);
 	for (int f = 0; f < SUPPORTED_SCALING_LEVELS; ++f)
 		DeleteDCAndBitmap(g_hScaledForegroundDCs[f], g_hScaledForegroundBitmaps[f]);
+	DestroyLogo();
 	if (g_hTransparentBrush)
 		::DeleteObject(g_hTransparentBrush);
+	::ReleaseDC(NULL,g_hScreenDC);
 }

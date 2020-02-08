@@ -6,6 +6,26 @@
 
 // The context menu
 HMENU g_hMenu = NULL;
+// When displaying the about dialog, we need to cater for the possibility that the main window will be topmost.
+// The dialog proc will need to remove/reset the topmostness.
+bool g_bDialogSetsTopmost = false;
+
+void SetMenuItemCheckmark(UINT nMenuItemID, bool set) {
+	MENUITEMINFO menuItemInfo;
+	::ZeroMemory(&menuItemInfo, sizeof(MENUITEMINFO));
+	menuItemInfo.cbSize = sizeof(MENUITEMINFO);
+	menuItemInfo.fMask = MIIM_STATE;
+	menuItemInfo.fState = set ? MFS_CHECKED : MFS_UNCHECKED;
+	::SetMenuItemInfo(g_hMenu, nMenuItemID, FALSE, &menuItemInfo);
+}
+
+void ToggleTopmost() {
+	DWORD currentExStyle = ::GetWindowLong(g_hLogoWindow, GWL_EXSTYLE);
+	bool currentlyTopmost = !!(currentExStyle & WS_EX_TOPMOST);
+	::SetWindowLong(g_hLogoWindow, GWL_EXSTYLE, currentExStyle ^ WS_EX_TOPMOST);
+	::SetWindowPos(g_hLogoWindow, currentlyTopmost ? HWND_NOTOPMOST : HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+	SetMenuItemCheckmark(MENUITEM_TOPMOST_ID, !currentlyTopmost);
+}
 
 INT_PTR AboutDialogProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 	switch (msg)
@@ -19,12 +39,16 @@ INT_PTR AboutDialogProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 		::OffsetRect(&rCentered, -rCentered.left, -rCentered.top);
 		::OffsetRect(&rCentered, -rThis.right, -rThis.bottom);
 		::SetWindowPos(hwnd, HWND_TOP, rParent.left + (rCentered.right / 2), rParent.top + (rCentered.bottom / 2), 0, 0, SWP_NOSIZE);
+		if (g_bDialogSetsTopmost)
+			ToggleTopmost();
 		return TRUE;
 	}
 	case WM_COMMAND:
 		switch (LOWORD(wParam))
 		{
 		case IDOK:
+			if (g_bDialogSetsTopmost)
+				ToggleTopmost();
 			EndDialog(hwnd, wParam);
 			return TRUE;
 		}
@@ -33,35 +57,26 @@ INT_PTR AboutDialogProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 }
 
 void ShowAboutDialog() {
-	::DialogBox(g_hInstance, MAKEINTRESOURCE(IDD_ABOUTDIALOG), g_hForegroundWindow, (DLGPROC)AboutDialogProc);
+	// Remove topmost attributes, otherwise the user will never see the about dialog.
+	DWORD currentExStyle = ::GetWindowLong(g_hLogoWindow, GWL_EXSTYLE);
+	g_bDialogSetsTopmost = !!(currentExStyle & WS_EX_TOPMOST);
+	::DialogBox(g_hInstance, MAKEINTRESOURCE(IDD_ABOUTDIALOG), g_hLogoWindow, (DLGPROC)AboutDialogProc);
 }
 
-void ToggleFullScreen(MENUITEMINFO* pMenuItemInfo, bool currentFullScreenState) {
-	pMenuItemInfo->fState = currentFullScreenState ? MFS_UNCHECKED : MFS_CHECKED;
-	::SetMenuItemInfo(g_hMenu, MENUITEM_FULLSCREEN_ID, FALSE, pMenuItemInfo);
+void ToggleFullScreen() {
+	bool currentFullScreenState = IsFullScreen();
 	SetFullScreen(!currentFullScreenState);
-}
-
-void ToggleTopmost(MENUITEMINFO* pMenuItemInfo, DWORD currentExStyle) {
-	bool currentlyTopmost = !!(currentExStyle & WS_EX_TOPMOST);
-	pMenuItemInfo->fState = currentlyTopmost ? MFS_UNCHECKED : MFS_CHECKED;
-	::SetWindowLong(g_hForegroundWindow, GWL_EXSTYLE, currentExStyle ^ WS_EX_TOPMOST);
-	::SetMenuItemInfo(g_hMenu, MENUITEM_TOPMOST_ID, FALSE, pMenuItemInfo);
-	::SetWindowPos(g_hForegroundWindow, currentlyTopmost?HWND_NOTOPMOST:HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+	SetMenuItemCheckmark(MENUITEM_FULLSCREEN_ID, !currentFullScreenState);
 }
 
 void ShowMenu(int xPos,int yPos) {
-	MENUITEMINFO menuItemInfo;
-	::ZeroMemory(&menuItemInfo, sizeof(MENUITEMINFO));
-	menuItemInfo.cbSize = sizeof(MENUITEMINFO);
-	menuItemInfo.fMask = MIIM_STATE;
 	int command = ::TrackPopupMenu(g_hMenu, TPM_RETURNCMD, xPos, yPos, 0, g_hForegroundWindow, NULL);
 	switch (command) {
 		case MENUITEM_TOPMOST_ID:
-			ToggleTopmost(&menuItemInfo, ::GetWindowLong(g_hForegroundWindow, GWL_EXSTYLE));
+			ToggleTopmost();
 			break;
 		case MENUITEM_FULLSCREEN_ID:
-			ToggleFullScreen(&menuItemInfo,IsFullScreen());
+			ToggleFullScreen();
 			break;
 		case MENUITEM_ABOUT_ID:
 			ShowAboutDialog();

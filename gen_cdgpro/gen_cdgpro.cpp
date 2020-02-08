@@ -44,8 +44,9 @@ DWORD WINAPI StartSongThread(LPVOID pParams) {
 	::WaitForSingleObject(g_hStoppedCDGProcessingEvent, INFINITE);
 	::ResetEvent(g_hStopCDGProcessingEvent);
 	const WCHAR* fileBeingPlayed = (const WCHAR*)pParams;
-	if (readCDGData(fileBeingPlayed)) {
+	if (ReadCDGData(fileBeingPlayed)) {
 		::SetEvent(g_hSongLoadedEvent);
+		ShowLogo(false);
 	}
 	free(pParams);
 	return 0;
@@ -71,6 +72,7 @@ LRESULT CALLBACK CdgProWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lPara
 				LRESULT isPlayingResult = ::SendMessage(plugin.hwndParent, WM_WA_IPC, 0, IPC_ISPLAYING);
 				if (!isPlayingResult) {
 					ResetProcessor();
+					ShowLogo(true);
 					::ZeroMemory(g_pScaledForegroundBitmapBits[0], (CDG_BITMAP_WIDTH * CDG_BITMAP_HEIGHT) / 2);
 					::RedrawWindow(g_hForegroundWindow, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
 					::RedrawWindow(g_hBackgroundWindow, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
@@ -91,7 +93,6 @@ int init() {
 	GdiplusStartupInput g_gdiPlusStartupInput;
 	::GdiplusStartup(&g_gdiPlusToken, &g_gdiPlusStartupInput, NULL);
 
-	LoadLogo();
 	CreateRightClickMenu();
 	CreateWindows();
 	CreateBitmaps();
@@ -106,9 +107,10 @@ void config() {
 
 void quit() {
 	StopCDGProcessor();
-	::SetWindowLong(plugin.hwndParent, GWL_WNDPROC, (LONG)g_pOriginalWndProc);
-	clearExistingCDGData();
+	ClearExistingCDGData();
 	DestroyRightClickMenu();
-	DestroyLogo();
+	DestroyWindows();
+	DestroyBitmaps();
 	::GdiplusShutdown(g_gdiPlusToken);
+	::SetWindowLong(plugin.hwndParent, GWL_WNDPROC, (LONG)g_pOriginalWndProc);
 }

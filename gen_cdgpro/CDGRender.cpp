@@ -11,10 +11,6 @@
 #pragma comment (lib,"Gdiplus.lib")
 using namespace Gdiplus;
 
-// Logo image
-Image* g_pLogoImage = NULL;
-SIZE g_logoSize;
-
 // Canvas pixel offsets for scrolling
 int g_nCanvasXOffset = 0;
 int g_nCanvasYOffset = 0;
@@ -160,29 +156,12 @@ void DrawForeground(RECT* pInvalidWindowRect) {
 	int nCanvasSourceY = (int)(CDG_CANVAS_HEIGHT * nScaling * nInvalidRectYFactor) + ((CDG_CANVAS_Y + g_nCanvasYOffset) * nScaling);
 	int nCanvasWidth = (int)(CDG_CANVAS_WIDTH * nScaling * nInvalidRectWFactor);
 	int nCanvasHeight = (int)(CDG_CANVAS_HEIGHT * nScaling * nInvalidRectHFactor);
-	::StretchBlt(g_hForegroundWindowDC, pInvalidWindowRect->left, pInvalidWindowRect->top, pInvalidWindowRect->right - pInvalidWindowRect->left, pInvalidWindowRect->bottom - pInvalidWindowRect->top, g_hMaskedForegroundDC, nCanvasSourceX, nCanvasSourceY, nCanvasWidth, nCanvasHeight, SRCCOPY);
-	if (g_pLogoImage && !g_nCDGPC) {
-		RECT r;
-		::GetClientRect(g_hForegroundWindow, &r);
-		int windowWidth = r.right - r.left;
-		int windowHeight = r.bottom - r.top;
-		Graphics g(g_hForegroundWindowDC);
-		g.DrawImage(g_pLogoImage, (windowWidth - g_logoSize.cx) / 2, (windowHeight - g_logoSize.cy) / 2, g_logoSize.cx, g_logoSize.cy);
-	}
+	int nInvalidRectWidth = pInvalidWindowRect->right - pInvalidWindowRect->left;
+	int nInvalidRectHeight = pInvalidWindowRect->bottom - pInvalidWindowRect->top;
+	::FillRect(g_hForegroundWindowDC, pInvalidWindowRect, g_hTransparentBrush);
+	// TODO: Scale this margin.
+	int nScaledMargin = g_nMargin;
+	::InflateRect(pInvalidWindowRect, -nScaledMargin, -nScaledMargin);
+	::StretchBlt(g_hForegroundWindowDC, pInvalidWindowRect->left, pInvalidWindowRect->top, nInvalidRectWidth - (nScaledMargin << 1), nInvalidRectHeight - (nScaledMargin << 1), g_hMaskedForegroundDC, nCanvasSourceX, nCanvasSourceY, nCanvasWidth, nCanvasHeight, SRCCOPY);
 }
 
-void LoadLogo() {
-	g_pLogoImage = new Image(g_pszLogoPath);
-	if (g_pLogoImage->GetLastStatus() == Ok) {
-		g_logoSize = { (LONG)g_pLogoImage->GetWidth(),(LONG)g_pLogoImage->GetHeight() };
-	}
-	else {
-		delete g_pLogoImage;
-		g_pLogoImage = NULL;
-	}
-}
-
-void DestroyLogo() {
-	if (g_pLogoImage)
-		delete g_pLogoImage;
-}

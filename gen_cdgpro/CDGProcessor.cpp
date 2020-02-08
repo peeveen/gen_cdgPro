@@ -136,7 +136,7 @@ bool StartCDGProcessor() {
 void StopCDGProcessor() {
 	::SetEvent(g_hStopCDGProcessingEvent);
 	::SetEvent(g_hStopCDGThreadEvent);
-
+	::WaitForSingleObject(g_hCDGProcessingThread, INFINITE);
 	::CloseHandle(g_hStopCDGProcessingEvent);
 	::CloseHandle(g_hStoppedCDGProcessingEvent);
 	::CloseHandle(g_hStopCDGThreadEvent);

@@ -22,5 +22,7 @@ extern int g_nBackgroundDetectionMode;
 extern int g_nDefaultBackgroundColor;
 // Scale2x/4x smoothing?
 extern int g_nSmoothingPasses;
+// Size of margin to leave on each side of the display.
+extern int g_nMargin;
 // Logo to display when there is no song playing.
 extern const WCHAR* g_pszLogoPath;

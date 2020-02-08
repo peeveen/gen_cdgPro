@@ -20,3 +20,12 @@ extern unsigned int* g_pBackgroundBitmapBits;
 
 extern HDC g_hScrollBufferDC;
 extern BYTE* g_pScrollBufferBitmapBits;
+
+extern HDC g_hLogoDC;
+extern HBITMAP g_hLogoBitmap;
+
+extern HDC g_hScreenDC;
+
+extern HBRUSH g_hTransparentBrush;
+
+extern SIZE g_logoSize;

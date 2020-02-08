@@ -6,7 +6,7 @@
 CDGPacket* g_pCDGData = NULL;
 DWORD g_nCDGPackets = 0;
 
-void clearExistingCDGData() {
+void ClearExistingCDGData() {
 	if (g_pCDGData) {
 		free(g_pCDGData);
 		g_pCDGData = NULL;
@@ -14,8 +14,8 @@ void clearExistingCDGData() {
 	g_nCDGPackets = 0;
 }
 
-bool readCDGData(const WCHAR* pFileBeingPlayed) {
-	clearExistingCDGData();
+bool ReadCDGData(const WCHAR* pFileBeingPlayed) {
+	ClearExistingCDGData();
 	bool result = false;
 	WCHAR pathBuffer[MAX_PATH + 1];
 	char zipEntryName[MAX_PATH + 1];

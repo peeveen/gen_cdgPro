@@ -15,5 +15,7 @@ int g_nBackgroundDetectionMode = BDM_TOPRIGHTPIXEL;
 int g_nDefaultBackgroundColor = 0x0055ff;
 // Scale2x/4x smoothing?
 int g_nSmoothingPasses = 2;
+// Size of margin.
+int g_nMargin = 15;
 // Logo to display when there is no song playing.
-const WCHAR* g_pszLogoPath = L"C:\\Users\\steven.frew\\Desktop\\smallLogo.png";
+const WCHAR* g_pszLogoPath = L"C:\\Users\\steve\\Desktop\\karaokeLogo3.png";
