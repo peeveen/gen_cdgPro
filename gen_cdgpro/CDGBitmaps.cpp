@@ -143,7 +143,7 @@ void ClearForegroundBuffer() {
 }
 
 bool LoadLogo() {
-	g_pLogoImage = new Image(g_pszLogoPath);
+	g_pLogoImage = new Image(g_szLogoPath);
 	if (g_pLogoImage->GetLastStatus() == Ok) {
 		g_logoSize = { (LONG)g_pLogoImage->GetWidth(),(LONG)g_pLogoImage->GetHeight() };
 		return true;

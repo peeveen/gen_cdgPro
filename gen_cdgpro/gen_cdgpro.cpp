@@ -90,6 +90,8 @@ int init() {
 	g_hInstance = plugin.hDllInstance;
 	g_hWinampWindow = plugin.hwndParent;
 
+	ReadPrefs();
+
 	GdiplusStartupInput g_gdiPlusStartupInput;
 	::GdiplusStartup(&g_gdiPlusToken, &g_gdiPlusStartupInput, NULL);
 

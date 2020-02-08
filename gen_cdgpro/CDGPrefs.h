@@ -8,6 +8,8 @@
 #define BDM_BOTTOMLEFTPIXEL 3
 #define BDM_BOTTOMRIGHTPIXEL 4
 
+void ReadPrefs();
+
 // Preferences (TODO: INI file or UI).
 extern int g_nBackgroundOpacity;
 extern bool g_bDrawOutline;
@@ -25,4 +27,4 @@ extern int g_nSmoothingPasses;
 // Size of margin to leave on each side of the display.
 extern int g_nMargin;
 // Logo to display when there is no song playing.
-extern const WCHAR* g_pszLogoPath;
+extern WCHAR g_szLogoPath[];
