@@ -148,8 +148,8 @@ void DrawForeground(RECT* pInvalidWindowRect) {
 	static RECT windowClientRect;
 	::GetClientRect(g_hForegroundWindow, &windowClientRect);
 	int nScaling = 1 <<g_nSmoothingPasses;
-	double windowClientRectWidth = windowClientRect.right - windowClientRect.left;
-	double windowClientRectHeight = windowClientRect.bottom - windowClientRect.top;
+	double windowClientRectWidth = (double)windowClientRect.right - windowClientRect.left;
+	double windowClientRectHeight = (double)windowClientRect.bottom - windowClientRect.top;
 	double nInvalidRectXFactor = ((double)pInvalidWindowRect->left) / windowClientRectWidth;
 	double nInvalidRectYFactor = ((double)pInvalidWindowRect->top) / windowClientRectHeight;
 	double nInvalidRectWFactor = ((double)((double)pInvalidWindowRect->right- pInvalidWindowRect->left)) / windowClientRectWidth;
