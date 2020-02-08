@@ -3,6 +3,8 @@
 #include "CDGPrefs.h"
 #include "CDGGlobals.h"
 
+#define PREF_BUFFER_SIZE (MAX_PATH*2)
+
 // Preferences (TODO: INI file or UI).
 int g_nBackgroundOpacity = 192;
 bool g_bDrawOutline = true;
@@ -20,56 +22,94 @@ int g_nSmoothingPasses = 2;
 // Size of margin.
 int g_nMargin = 15;
 // Logo to display when there is no song playing.
-WCHAR g_szLogoPath[MAX_PATH + 1]={'\0'};
+WCHAR g_szLogoPath[PREF_BUFFER_SIZE]={'\0'};
 
-void TrimLeading(WCHAR* pszString, int nBufferSize) {
+void TrimLeading(WCHAR* pszString) {
 	WCHAR* pszPointer = pszString;
 	while (*pszPointer == ' ' || *pszPointer == '\t')
 		++pszPointer;
-	wcscpy_s(pszString, nBufferSize, pszPointer);
+	wcscpy_s(pszString, PREF_BUFFER_SIZE, pszPointer);
 }
 
-void ParseInt(WCHAR* pszBuffer, int nBufferSize,int* pnDest, int nValidMinimum,int nValidMaximum,bool hex = false) {
-	TrimLeading(pszBuffer, nBufferSize);
-	if (pszBuffer[0] == '=') {
-		++pszBuffer;
-		--nBufferSize;
-		TrimLeading(pszBuffer, nBufferSize);
-		int parsedValue = 0;
-		if (hex)
-			parsedValue = wcstol(pszBuffer, NULL, 16);
-		else
-			parsedValue= _wtol(pszBuffer);
-		if (parsedValue < nValidMinimum)
-			parsedValue = nValidMinimum;
-		else if (parsedValue > nValidMaximum)
-			parsedValue = nValidMaximum;
-		*pnDest = parsedValue;
+void SetPref(WCHAR* pszPrefLine, const WCHAR* pszPrefName, void* pDestVal, void (*pFunc)(const WCHAR *,void *)) {
+	int len = wcslen(pszPrefName);
+	if (!wcsncmp(pszPrefLine, pszPrefName, len)) {
+		wcscpy_s(pszPrefLine, PREF_BUFFER_SIZE,pszPrefLine + len);
+		TrimLeading(pszPrefLine);
+		if (pszPrefLine[0] == '=') {
+			++pszPrefLine;
+			TrimLeading(pszPrefLine);
+			pFunc(pszPrefLine, pDestVal);
+		}
 	}
 }
 
-void ParseBool(WCHAR* pszBuffer, int nBufferSize, bool* pbDest) {
-	TrimLeading(pszBuffer, nBufferSize);
-	if (pszBuffer[0] == '=') {
-		++pszBuffer;
-		--nBufferSize;
-		TrimLeading(pszBuffer, nBufferSize);
-		bool parsedValue = pszBuffer[0] == 'T' || pszBuffer[0] == 't' || pszBuffer[0] == 'Y' || pszBuffer[0] == 'y';
-		*pbDest = parsedValue;
-	}
+void SetBoolValue(const WCHAR* pszPrefValue, void* pbDestVal) {
+	*(bool*)pbDestVal = wcslen(pszPrefValue) && (pszPrefValue[0] == 't' || pszPrefValue[0] == 'y');
 }
 
-void ParseString(WCHAR* pszBuffer, int nBufferSize, WCHAR *pszDest,int nDestBufferSize) {
-	TrimLeading(pszBuffer, nBufferSize);
-	if (pszBuffer[0] == '=') {
-		++pszBuffer;
-		--nBufferSize;
-		wcscpy_s(pszDest, nDestBufferSize,pszBuffer);
-	}
+void SetStringValue(const WCHAR* pszPrefValue, void* pszDestVal) {
+	wcscpy_s((WCHAR *)pszDestVal, PREF_BUFFER_SIZE,pszPrefValue);
+}
+
+void SetIntValueRadix(const WCHAR *pszPrefValue, int* pnDestVal, int radix) {
+	*(int*)pnDestVal = wcstol(pszPrefValue, NULL, radix);
+}
+
+void SetIntValue(const WCHAR* pszPrefValue, void* pnDestVal) {
+	SetIntValueRadix(pszPrefValue, (int*)pnDestVal,10);
+}
+
+void SetHexIntValue(const WCHAR* pszPrefValue, void* pnDestVal) {
+	SetIntValueRadix(pszPrefValue, (int*)pnDestVal,16);
+}
+
+void SetInt(WCHAR* pszPrefLine, const WCHAR* pszPrefName, int* pnDestVal, int nMin, int nMax, bool hex = false) {
+	SetPref(pszPrefLine, pszPrefName, pnDestVal, hex ? SetHexIntValue : SetIntValue);
+	if (*pnDestVal < nMin)
+		*pnDestVal = nMin;
+	else if (*pnDestVal > nMax)
+		*pnDestVal = nMax;
+}
+
+void SetBool(WCHAR* pszPrefLine, const WCHAR* pszPrefName, bool* pbDestVal) {
+	SetPref(pszPrefLine, pszPrefName, pbDestVal, SetBoolValue);
+}
+
+void SetString(WCHAR* pszPrefLine, const WCHAR* pszPrefName, WCHAR *pszDestVal) {
+	SetPref(pszPrefLine, pszPrefName, pszDestVal, SetStringValue);
+}
+
+void SetOpacity(WCHAR* pszPrefLine) {
+	SetInt(pszPrefLine, L"opacity", &g_nBackgroundOpacity, 0, 255);
+}
+
+void SetBackgroundColor(WCHAR* pszPrefLine) {
+	SetInt(pszPrefLine, L"backgroundcolor", &g_nDefaultBackgroundColor, 0, 0x00ffffff,true);
+}
+
+void SetBackgroundDetectionMode(WCHAR* pszPrefLine) {
+	SetInt(pszPrefLine, L"backgrounddetectionmode", &g_nBackgroundDetectionMode, 0, 4);
+}
+
+void SetSmoothingPasses(WCHAR* pszPrefLine) {
+	SetInt(pszPrefLine, L"smoothingpasses", &g_nSmoothingPasses, 0, SUPPORTED_SCALING_LEVELS - 1);
+}
+
+void SetMargin(WCHAR* pszPrefLine) {
+	SetInt(pszPrefLine, L"margin", &g_nMargin, 0, 50);
+}
+
+void SetOutline(WCHAR* pszPrefLine) {
+	SetBool(pszPrefLine, L"outline", &g_bDrawOutline);
+}
+
+void SetLogoPath(WCHAR* pszPrefLine) {
+	SetString(pszPrefLine, L"logopath", g_szLogoPath);
 }
 
 void ReadPrefs() {
-	WCHAR szBuffer[MAX_PATH*2];
+	WCHAR szBuffer[PREF_BUFFER_SIZE];
 	if (GetModuleFileName(g_hInstance, szBuffer, MAX_PATH)) {
 		WCHAR* pszLastSlash = wcsrchr(szBuffer, '\\');
 		if (pszLastSlash) {
@@ -78,22 +118,16 @@ void ReadPrefs() {
 			FILE* pFile = NULL;
 			errno_t error=_wfopen_s(&pFile,szBuffer, L"rt");
 			if (pFile && !error) {
-				while (fgetws(szBuffer, MAX_PATH * 2, pFile)) {
-					TrimLeading(szBuffer, MAX_PATH * 2);
-					if (!wcsncmp(szBuffer, L"Opacity", 7))
-						ParseInt(szBuffer + 7, (MAX_PATH * 2) - 7, &g_nBackgroundOpacity, 0, 255);
-					else if (!wcsncmp(szBuffer, L"BackgroundColor", 15))
-						ParseInt(szBuffer + 15, (MAX_PATH * 2) - 15, &g_nDefaultBackgroundColor,0,0xFFFFFF,true);
-					else if (!wcsncmp(szBuffer, L"BackgroundDetectionMode", 23))
-						ParseInt(szBuffer + 23, (MAX_PATH * 2) - 23, &g_nBackgroundDetectionMode, BDM_PALETTEINDEXZERO, BDM_BOTTOMRIGHTPIXEL );
-					else if (!wcsncmp(szBuffer, L"SmoothingPasses", 15))
-						ParseInt(szBuffer + 15, (MAX_PATH * 2) - 15, &g_nSmoothingPasses, 0, SUPPORTED_SCALING_LEVELS - 1);
-					else if (!wcsncmp(szBuffer, L"Margin", 6))
-						ParseInt(szBuffer + 6, (MAX_PATH * 2) - 6, &g_nMargin,0,50);
-					else if (!wcsncmp(szBuffer, L"Outline", 7))
-						ParseBool(szBuffer + 7, (MAX_PATH * 2) - 7, &g_bDrawOutline);
-					else if (!wcsncmp(szBuffer, L"LogoPath", 8))
-						ParseString(szBuffer + 8, (MAX_PATH * 2) - 8, g_szLogoPath,MAX_PATH);
+				while (fgetws(szBuffer, PREF_BUFFER_SIZE, pFile)) {
+					_wcslwr_s(szBuffer);
+					TrimLeading(szBuffer);
+					SetOpacity(szBuffer);
+					SetBackgroundColor(szBuffer);
+					SetBackgroundDetectionMode(szBuffer);
+					SetSmoothingPasses(szBuffer);
+					SetMargin(szBuffer);
+					SetOutline(szBuffer);
+					SetLogoPath(szBuffer);
 				}
 				fclose(pFile);
 			}
