@@ -152,8 +152,8 @@ void DrawForeground(RECT* pInvalidWindowRect) {
 	double windowClientRectHeight = (double)windowClientRect.bottom - windowClientRect.top;
 	double nInvalidRectXFactor = pInvalidWindowRect->left / windowClientRectWidth;
 	double nInvalidRectYFactor = pInvalidWindowRect->top / windowClientRectHeight;
-	double nInvalidRectWFactor = (pInvalidWindowRect->right- pInvalidWindowRect->left) / windowClientRectWidth;
-	double nInvalidRectHFactor = (pInvalidWindowRect->bottom- pInvalidWindowRect->top) / windowClientRectHeight;
+	double nInvalidRectWFactor = ((double)pInvalidWindowRect->right- pInvalidWindowRect->left) / windowClientRectWidth;
+	double nInvalidRectHFactor = ((double)pInvalidWindowRect->bottom- pInvalidWindowRect->top) / windowClientRectHeight;
 	int nCanvasSourceX = (int)(CDG_CANVAS_WIDTH * nScaling * nInvalidRectXFactor) + ((CDG_CANVAS_X + g_nCanvasXOffset) * nScaling);
 	int nCanvasSourceY = (int)(CDG_CANVAS_HEIGHT * nScaling * nInvalidRectYFactor) + ((CDG_CANVAS_Y + g_nCanvasYOffset) * nScaling);
 	int nCanvasWidth = (int)(CDG_CANVAS_WIDTH * nScaling * nInvalidRectWFactor);

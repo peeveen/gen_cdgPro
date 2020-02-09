@@ -39,15 +39,30 @@ extern "C" __declspec(dllexport) winampGeneralPurposePlugin * winampGetGeneralPu
 	return &plugin;
 }
 
+void Stop() {
+	ResetProcessor();
+	ShowLogo(true);
+	::ZeroMemory(g_pScaledForegroundBitmapBits[0], (CDG_BITMAP_WIDTH * CDG_BITMAP_HEIGHT) / 2);
+	::RedrawWindow(g_hForegroundWindow, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
+	::RedrawWindow(g_hBackgroundWindow, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
+}
+
 DWORD WINAPI StartSongThread(LPVOID pParams) {
-	::SetEvent(g_hStopCDGProcessingEvent);
-	::WaitForSingleObject(g_hStoppedCDGProcessingEvent, INFINITE);
-	::ResetEvent(g_hStopCDGProcessingEvent);
 	const WCHAR* fileBeingPlayed = (const WCHAR*)pParams;
+	bool isCDGProcessorRunning = WaitForSingleObject(g_hStoppedCDGProcessingEvent, 0) == WAIT_TIMEOUT;
+	if (isCDGProcessorRunning) {
+		::SetEvent(g_hStopCDGProcessingEvent);
+		::WaitForSingleObject(g_hStoppedCDGProcessingEvent, INFINITE);
+		::ResetEvent(g_hStopCDGProcessingEvent);
+	}
+	else
+		::SetEvent(g_hStoppedCDGProcessingEvent);
 	if (ReadCDGData(fileBeingPlayed)) {
 		::SetEvent(g_hSongLoadedEvent);
 		ShowLogo(false);
 	}
+	else
+		Stop();
 	free(pParams);
 	return 0;
 }
@@ -70,13 +85,8 @@ LRESULT CALLBACK CdgProWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lPara
 		case IPC_CB_MISC:
 			if (wParam == IPC_CB_MISC_STATUS) {
 				LRESULT isPlayingResult = ::SendMessage(plugin.hwndParent, WM_WA_IPC, 0, IPC_ISPLAYING);
-				if (!isPlayingResult) {
-					ResetProcessor();
-					ShowLogo(true);
-					::ZeroMemory(g_pScaledForegroundBitmapBits[0], (CDG_BITMAP_WIDTH * CDG_BITMAP_HEIGHT) / 2);
-					::RedrawWindow(g_hForegroundWindow, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
-					::RedrawWindow(g_hBackgroundWindow, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
-				}
+				if (!isPlayingResult)
+					Stop();
 			}
 			break;
 		}
@@ -89,6 +99,7 @@ LRESULT CALLBACK CdgProWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lPara
 int init() {
 	g_hInstance = plugin.hDllInstance;
 	g_hWinampWindow = plugin.hwndParent;
+	g_pOriginalWndProc = (WNDPROC)SetWindowLong(plugin.hwndParent, GWL_WNDPROC, (LONG)CdgProWndProc);
 
 	ReadPrefs();
 
@@ -100,7 +111,6 @@ int init() {
 	CreateBitmaps();
 	StartCDGProcessor();
 
-	g_pOriginalWndProc = (WNDPROC)SetWindowLong(plugin.hwndParent, GWL_WNDPROC, (LONG)CdgProWndProc);
 	return 0;
 }
 
