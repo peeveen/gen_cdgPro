@@ -26,7 +26,7 @@ bool ReadCDGData(const WCHAR* pFileBeingPlayed) {
 	size_t pathLength = wcslen(pathBuffer);
 	_wcslwr_s(pathBuffer);
 	const WCHAR* zipPrefixLocation = wcsstr(pathBuffer, L"zip://");
-	bool isZipFile = false;// !wcscmp(pathBuffer + (pathLength - 4), L".zip");
+	bool isZipFile = !wcscmp(pathBuffer + (pathLength - 4), L".zip");
 	if (zipPrefixLocation || isZipFile) {
 		// Format of string might be zip://somepathtoazipfile,n
 		// n will be the indexed entry in the zip file that is being played.
