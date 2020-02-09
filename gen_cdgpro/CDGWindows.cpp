@@ -151,6 +151,8 @@ LRESULT CALLBACK ForegroundWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARA
 	case WM_CLOSE:
 		return 1;
 	case WM_PAINT:
+		if(g_bDoubleBuffered)
+			::SwapBuffers(g_hForegroundWindowDC);
 		::BeginPaint(g_hForegroundWindow, &ps);
 		DrawForeground(&ps.rcPaint);
 		::EndPaint(g_hForegroundWindow, &ps);

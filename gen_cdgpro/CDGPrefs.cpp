@@ -5,7 +5,6 @@
 
 #define PREF_BUFFER_SIZE (MAX_PATH*2)
 
-// Preferences (TODO: INI file or UI).
 int g_nBackgroundOpacity = 192;
 // Draw an outline around the foreground graphics for increased visibility?
 bool g_bDrawOutline = true;
@@ -21,6 +20,9 @@ int g_nDefaultBackgroundColor = 0x0055ff;
 int g_nSmoothingPasses = 2;
 // Size of margin.
 int g_nMargin = 15;
+// Should we use SwapBuffers when rendering? Makes for slower refresh, but might reduce
+// flickering on slower machines.
+bool g_bDoubleBuffered=false;
 // Logo to display when there is no song playing.
 WCHAR g_szLogoPath[PREF_BUFFER_SIZE]={'\0'};
 
@@ -104,6 +106,10 @@ void SetOutline(WCHAR* pszPrefLine) {
 	SetBool(pszPrefLine, L"outline", &g_bDrawOutline);
 }
 
+void SetDoubleBuffered(WCHAR* pszPrefLine) {
+	SetBool(pszPrefLine, L"doublebuffered", &g_bDoubleBuffered);
+}
+
 void SetLogoPath(WCHAR* pszPrefLine) {
 	SetString(pszPrefLine, L"logopath", g_szLogoPath);
 }
@@ -128,6 +134,7 @@ void ReadPrefs() {
 					SetMargin(szBuffer);
 					SetOutline(szBuffer);
 					SetLogoPath(szBuffer);
+					SetDoubleBuffered(szBuffer);
 				}
 				fclose(pFile);
 			}
