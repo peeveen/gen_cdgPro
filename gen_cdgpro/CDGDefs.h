@@ -47,8 +47,8 @@ typedef struct {
 #define CDG_BITMAP_HEIGHT CDG_HEIGHT
 
 // For smoothing purposes, we will scale the graphics up and apply a smoothing algorithm.
-#define SUPPORTED_SCALING_LEVELS (3) // 1x,2x,4x
-#define MAXIMUM_SCALING_FACTOR (4)
+#define SUPPORTED_SCALING_LEVELS (4) // 1x,2x,4x
+#define MAXIMUM_SCALING_FACTOR ((1<<SUPPORTED_SCALING_LEVELS)>>1)
 #define CDG_MAXIMUM_BITMAP_WIDTH (CDG_BITMAP_WIDTH*MAXIMUM_SCALING_FACTOR)
 #define CDG_MAXIMUM_BITMAP_HEIGHT (CDG_BITMAP_HEIGHT*MAXIMUM_SCALING_FACTOR)
 
