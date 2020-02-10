@@ -12,7 +12,6 @@ using namespace Gdiplus;
 #include "CDGBackgroundFunctions.h"
 #include "CDGPalette.h"
 #include "CDGMenu.h"
-#include "CDGReader.h"
 #include "CDGRender.h"
 #include "CDGWindows.h"
 #include "CDGBitmaps.h"
@@ -55,7 +54,7 @@ DWORD WINAPI StartSongThread(LPVOID pParams) {
 	int listPos = ::SendMessage(g_hWinampWindow, WM_WA_IPC, 0, IPC_GETLISTPOS);
 	const WCHAR* fileBeingPlayed = (const WCHAR*)::SendMessage(g_hWinampWindow, WM_WA_IPC, listPos, IPC_GETPLAYLISTFILEW);
 	if (fileBeingPlayed) {
-		bool isCDGProcessorRunning = WaitForSingleObject(g_hStoppedCDGProcessingEvent, 0) == WAIT_TIMEOUT;
+		bool isCDGProcessorRunning = ::WaitForSingleObject(g_hStoppedCDGProcessingEvent, 0) == WAIT_TIMEOUT;
 		if (isCDGProcessorRunning) {
 			::SetEvent(g_hStopCDGProcessingEvent);
 			::WaitForSingleObject(g_hStoppedCDGProcessingEvent, INFINITE);
@@ -103,7 +102,7 @@ LRESULT CALLBACK CdgProWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lPara
 int init() {
 	g_hInstance = plugin.hDllInstance;
 	g_hWinampWindow = plugin.hwndParent;
-	g_pOriginalWndProc = (WNDPROC)SetWindowLong(plugin.hwndParent, GWL_WNDPROC, (LONG)CdgProWndProc);
+	g_pOriginalWndProc = (WNDPROC)::SetWindowLong(plugin.hwndParent, GWL_WNDPROC, (LONG)CdgProWndProc);
 
 	ReadPrefs();
 

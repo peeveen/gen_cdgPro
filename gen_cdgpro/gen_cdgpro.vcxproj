@@ -78,6 +78,7 @@
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <LinkIncremental>false</LinkIncremental>
+    <TargetName>gen_cdgPro</TargetName>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <LinkIncremental>false</LinkIncremental>
@@ -168,7 +169,6 @@
     <ClInclude Include="CDGPalette.h" />
     <ClInclude Include="CDGPrefs.h" />
     <ClInclude Include="CDGProcessor.h" />
-    <ClInclude Include="CDGReader.h" />
     <ClInclude Include="CDGRender.h" />
     <ClInclude Include="CDGWindows.h" />
     <ClInclude Include="resource.h" />
@@ -184,7 +184,6 @@
     <ClCompile Include="CDGPalette.cpp" />
     <ClCompile Include="CDGPrefs.cpp" />
     <ClCompile Include="CDGProcessor.cpp" />
-    <ClCompile Include="CDGReader.cpp" />
     <ClCompile Include="CDGRender.cpp" />
     <ClCompile Include="CDGWindows.cpp" />
     <ClCompile Include="gen_cdgpro.cpp" />

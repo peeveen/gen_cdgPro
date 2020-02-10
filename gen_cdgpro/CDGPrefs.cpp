@@ -6,7 +6,7 @@
 #define PREF_BUFFER_SIZE (MAX_PATH*2)
 
 // Path to the INI file
-WCHAR g_szINIPath[MAX_PATH + 1];
+WCHAR g_szINIPath[MAX_PATH + 1] = { '\0' };
 // How opaque should the window be?
 int g_nBackgroundOpacity = 192;
 // Draw an outline around the foreground graphics for increased visibility?
