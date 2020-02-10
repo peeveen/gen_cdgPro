@@ -5,6 +5,7 @@
 #include "CDGPrefs.h"
 #include "CDGMenu.h"
 #include "CDGRender.h"
+#include "CDGUtils.h"
 #include "resource.h"
 
 // Window class names.
@@ -30,6 +31,29 @@ RECT g_lastSize = { 0,0,0,0 };
 SIZE g_logoWindowOffset = { 0,0 };
 // Blend function params for logo.
 BLENDFUNCTION g_blendFn= { AC_SRC_OVER ,0,255,AC_SRC_ALPHA };
+
+void CDGRectToWindowRect(RECT* pRect) {
+	static RECT cdgCanvasRect = { 0,0,CDG_CANVAS_WIDTH,CDG_CANVAS_HEIGHT };
+	static RECT clientRect;
+	// First of all, trim the border off.
+	::OffsetRect(pRect, -CDG_CELL_WIDTH, -CDG_CELL_HEIGHT);
+	RECT tempRect = *pRect;
+	::IntersectRect(pRect, &tempRect,&cdgCanvasRect);
+	// Now scale it based on the client size.
+	::GetClientRect(g_hForegroundWindow, &clientRect);
+	double nClientWidth = clientRect.right - clientRect.left;
+	double nClientHeight = clientRect.bottom - clientRect.top;
+	double nScaleXFactor = nClientWidth / (CDG_CANVAS_WIDTH+(g_nMargin<<1));
+	double nScaleYFactor = nClientHeight / (CDG_CANVAS_HEIGHT+(g_nMargin<<1));
+	double nScaledXMargin = g_nMargin * nScaleXFactor;
+	double nScaledYMargin = g_nMargin * nScaleYFactor;
+	// Could use ScaleRect and OffsetRect here, but we'd get two double-to-int
+	// rounding operations in a row, which could lose accuracy.
+	pRect->left = (int)(((double)pRect->left * nScaleXFactor) + nScaledXMargin);
+	pRect->right = (int)(((double)pRect->right * nScaleXFactor) + nScaledXMargin);
+	pRect->top = (int)(((double)pRect->top * nScaleYFactor) + nScaledYMargin);
+	pRect->bottom = (int)(((double)pRect->bottom * nScaleYFactor) + nScaledYMargin);
+}
 
 void UpdateLogoPosition() {
 	::SetWindowPos(g_hForegroundWindow, g_hLogoWindow, 0, 0,0,0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
@@ -69,11 +93,11 @@ void ShowWindows(bool bSongPlaying) {
 	DWORD exStyle = ::GetWindowLong(g_hForegroundWindow, GWL_EXSTYLE);
 	if (bSongPlaying) {
 		::ShowWindow(g_hLogoWindow, SW_HIDE);
+		::ShowWindow(g_hBackgroundWindow, SW_SHOW);
+		::ShowWindow(g_hForegroundWindow, SW_SHOW);
 		// The foreground window should now be the app window.
 		exStyle |= WS_EX_APPWINDOW;
 		::SetWindowLong(g_hForegroundWindow, GWL_EXSTYLE, exStyle);
-		::ShowWindow(g_hBackgroundWindow, SW_SHOW);
-		::ShowWindow(g_hForegroundWindow, SW_SHOW);
 	}
 	else {
 		if (g_pLogoImage) {
@@ -271,15 +295,16 @@ ATOM RegisterLogoWindowClass() {
 	return RegisterWindowClass(g_logoWindowClassName, (WNDPROC)LogoWindowProc);
 }
 
-bool CreateCDGWindow(HWND* phWnd, HDC* phDC, const WCHAR* pszClassName, DWORD additionalStyles, DWORD additionalExStyles) {
-	DWORD styles = additionalStyles;
+bool CreateCDGWindow(HWND* phWnd, HDC* phDC, const WCHAR* pszClassName, DWORD styles, DWORD additionalExStyles) {
+	int nWidth = CDG_CANVAS_WIDTH + (g_nMargin << 1);
+	int nHeight = CDG_CANVAS_HEIGHT + (g_nMargin << 1);
 	*phWnd = CreateWindowEx(
 		WS_EX_LAYERED | additionalExStyles,
 		pszClassName,
 		g_pszWindowCaption,
 		styles,
 		CW_USEDEFAULT, CW_USEDEFAULT,
-		CDG_WIDTH, CDG_HEIGHT,
+		nWidth,nHeight,
 		// We don't want this window to minimize/restore along with WinAmp, so we don't
 		// tell Windows that this is a child of WinAmp.
 		NULL,//g_hWinampWindow,
@@ -290,7 +315,7 @@ bool CreateCDGWindow(HWND* phWnd, HDC* phDC, const WCHAR* pszClassName, DWORD ad
 		*phDC = ::GetDC(*phWnd);
 		if (*phDC) {
 			::SetWindowLong(*phWnd, GWL_STYLE, styles);
-			::SetWindowPos(*phWnd, NULL, 50, 50, CDG_WIDTH, CDG_HEIGHT, SWP_NOZORDER | SWP_FRAMECHANGED);
+			::SetWindowPos(*phWnd, NULL, 50, 50, nWidth,nHeight, SWP_NOZORDER | SWP_FRAMECHANGED);
 			RECT windowRect, clientRect;
 			::GetWindowRect(*phWnd, &windowRect);
 			::GetClientRect(*phWnd, &clientRect);
@@ -298,7 +323,7 @@ bool CreateCDGWindow(HWND* phWnd, HDC* phDC, const WCHAR* pszClassName, DWORD ad
 			int windowHeight = windowRect.bottom - windowRect.top;
 			int clientWidth = clientRect.right - clientRect.left;
 			int clientHeight = clientRect.bottom - clientRect.top;
-			::SetWindowPos(*phWnd, NULL, 50, 50, CDG_WIDTH + (windowWidth - clientWidth), CDG_HEIGHT + (windowHeight - clientHeight), SWP_NOZORDER);
+			::SetWindowPos(*phWnd, NULL, 50, 50, nWidth + (windowWidth - clientWidth), nHeight + (windowHeight - clientHeight), SWP_NOZORDER);
 			return true;
 		}
 	}

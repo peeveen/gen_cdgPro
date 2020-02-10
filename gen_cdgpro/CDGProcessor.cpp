@@ -19,7 +19,7 @@ HANDLE g_hSongLoadedEvent = NULL;
 // Current CDG instruction index.
 DWORD g_nCDGPC = 0;
 
-BYTE ProcessCDGPackets(long songPosition,RECT *pInvalidRect) {
+BYTE ProcessCDGPackets(long songPosition,RECT *pRedrawRect,RECT *pRepaintRect) {
 	BYTE result = 0;
 	HANDLE waitHandles[] = { g_hStopCDGProcessingEvent, g_hStopCDGThreadEvent };
 	// Get current song position in milliseconds (see comment about rewind tolerance).
@@ -45,25 +45,25 @@ BYTE ProcessCDGPackets(long songPosition,RECT *pInvalidRect) {
 					BYTE instr = pCDGPacket->instruction & 0x3F;
 					switch (instr) {
 					case CDG_INSTR_MEMORY_PRESET:
-						result |= MemoryPreset(pCDGPacket->data[0] & 0x0F);
+						result |= MemoryPreset(pCDGPacket->data[0] & 0x0F, pRepaintRect);
 						break;
 					case CDG_INSTR_BORDER_PRESET:
 						result|=BorderPreset(pCDGPacket->data[0] & 0x0F);
 						break;
 					case CDG_INSTR_TILE_BLOCK:
 					case CDG_INSTR_TILE_BLOCK_XOR:
-						result |= TileBlock(pCDGPacket->data, instr == CDG_INSTR_TILE_BLOCK_XOR,pInvalidRect);
+						result |= TileBlock(pCDGPacket->data, instr == CDG_INSTR_TILE_BLOCK_XOR,pRedrawRect, pRepaintRect);
 						break;
 					case CDG_INSTR_SCROLL_COPY:
 					case CDG_INSTR_SCROLL_PRESET:
-						result |= Scroll(pCDGPacket->data[0] & 0x0F, (pCDGPacket->data[1] >> 4) & 0x03, pCDGPacket->data[1] & 0x0F, (pCDGPacket->data[2] >> 4) & 0x03, pCDGPacket->data[2] & 0x0F, instr == CDG_INSTR_SCROLL_COPY,pInvalidRect);
+						result |= Scroll(pCDGPacket->data[0] & 0x0F, (pCDGPacket->data[1] >> 4) & 0x03, pCDGPacket->data[1] & 0x0F, (pCDGPacket->data[2] >> 4) & 0x03, pCDGPacket->data[2] & 0x0F, instr == CDG_INSTR_SCROLL_COPY,pRedrawRect, pRepaintRect);
 						break;
 					case CDG_INSTR_TRANSPARENT_COLOR:
 						// Not implemented.
 						break;
 					case CDG_INSTR_LOAD_COLOR_TABLE_LOW:
 					case CDG_INSTR_LOAD_COLOR_TABLE_HIGH:
-						result |= LoadColorTable(pCDGPacket->data, instr == CDG_INSTR_LOAD_COLOR_TABLE_HIGH);
+						result |= LoadColorTable(pCDGPacket->data, instr == CDG_INSTR_LOAD_COLOR_TABLE_HIGH, pRepaintRect);
 						break;
 					default:
 						break;
@@ -87,7 +87,7 @@ void ResetProcessor() {
 
 DWORD WINAPI CDGProcessor(LPVOID pParams) {
 	HANDLE waitHandles[] = { g_hStopCDGProcessingEvent, g_hStopCDGThreadEvent,g_hSongLoadedEvent };
-	static RECT invalidRect;
+	static RECT repaintRect,redrawRect;
 	for (;;) {
 		ResetProcessor();
 		int waitResult = ::WaitForMultipleObjects(2, waitHandles + 1, FALSE, INFINITE);
@@ -97,20 +97,28 @@ DWORD WINAPI CDGProcessor(LPVOID pParams) {
 		for (;;) {
 			waitResult = ::WaitForMultipleObjects(2, waitHandles, FALSE, SCREEN_REFRESH_MS);
 			if (waitResult == WAIT_TIMEOUT) {
-				::ZeroMemory(&invalidRect, sizeof(RECT));
+				::ZeroMemory(&repaintRect, sizeof(RECT));
+				::ZeroMemory(&redrawRect, sizeof(RECT));
 				if (g_nCDGPC < g_nCDGPackets) {
-					byte result = ProcessCDGPackets(::SendMessage(g_hWinampWindow, WM_WA_IPC, 0, IPC_GETOUTPUTTIME),&invalidRect);
+					byte result = ProcessCDGPackets(::SendMessage(g_hWinampWindow, WM_WA_IPC, 0, IPC_GETOUTPUTTIME),&redrawRect,&repaintRect);
 					// Each call to ProcessCDGPackets will return a byte, which is an accumulation of the results from the
 					// CDG instructions that were processed.
-					// If the 1 bit is set, then the foreground needs redrawn (and pInvalidRect will be set to an area that needs rendered).
+					// If the 1 bit is set, then the foreground area defined by redrawRect needs redrawn and re-painted.
+					// If the 4 bit is set, then the foreground area defined by repaintRect needs re-rendered and re-painted.
 					// If the 2 bit is set, then the entire background needs repainted.
-					// If the 4 bit is set, then the entire foreground needs repainted.
 					if (result & 0x01)
-						RedrawForeground(&invalidRect);
+						RedrawForeground(&redrawRect);
 					if (result & 0x04)
-						RefreshScreen(NULL);
-					if (result & 0x05)
-						::RedrawWindow(g_hForegroundWindow, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
+						RefreshScreen(&repaintRect);
+					if (result & 0x05) {
+						RECT* pRect = (repaintRect.right == 0 ? NULL : &repaintRect);
+						if (pRect) {
+							if (g_bDrawOutline)
+								::InflateRect(pRect, 1, 1);
+							CDGRectToWindowRect(pRect);
+						}
+						::RedrawWindow(g_hForegroundWindow, pRect, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
+					}
 					if (result & 0x02)
 						::RedrawWindow(g_hBackgroundWindow, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
 				}

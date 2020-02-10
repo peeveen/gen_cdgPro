@@ -1,9 +1,11 @@
 #include "stdafx.h"
+#include <strsafe.h>
 #include "CDGGlobals.h"
 #include "CDGPrefs.h"
 #include "CDGWindows.h"
 #include "CDGBitmaps.h"
 #include "CDGProcessor.h"
+#include "CDGUtils.h"
 #include <objidl.h>
 #include <stdlib.h>
 #include <gdiplus.h>
@@ -87,13 +89,6 @@ void DrawBackground() {
 	::StretchBlt(g_hBackgroundWindowDC, 0, 0, r.right - r.left, r.bottom - r.top, g_hBackgroundDC, 0, 0, 1, 1, SRCCOPY);
 }
 
-void ScaleRect(RECT* pRect, int factor) {
-	pRect->left *= factor;
-	pRect->right *= factor;
-	pRect->top *= factor;
-	pRect->bottom *= factor;
-}
-
 void RefreshScreen(RECT* pInvalidCDGRect) {
 	static RECT outlineRect;
 	HDC hSourceDC = g_hScaledForegroundDCs[g_nSmoothingPasses];
@@ -121,7 +116,9 @@ void RefreshScreen(RECT* pInvalidCDGRect) {
 }
 
 void RedrawForeground(RECT* pInvalidCDGRect) {
-	RECT cdgDisplayRect = { 0,0,CDG_WIDTH,CDG_HEIGHT };
+	static RECT cdgDisplayRect = { 0,0,CDG_WIDTH,CDG_HEIGHT };
+	static RECT workingRect;
+	memcpy(&workingRect, pInvalidCDGRect, sizeof(RECT));
 	if (g_nSmoothingPasses) {
 		// The smoothing algorithms have to operate on adjacent pixels, so we will have to include
 		// an extra pixel on each side of the invalid rectangle. Also, the algorithm works on two
@@ -129,43 +126,53 @@ void RedrawForeground(RECT* pInvalidCDGRect) {
 		// complex algorithm to cater for odd numbered boundaries for very little increase in speed.
 		// Therefore, we will keep the horizontal offsets even by adding yet ANOTHER pixel.
 		static RECT tempRect;
-		::InflateRect(pInvalidCDGRect, 2, 1);
-		memcpy(&tempRect, pInvalidCDGRect, sizeof(RECT));
-		::IntersectRect(pInvalidCDGRect, &tempRect, &cdgDisplayRect);
+		::InflateRect(&workingRect, 2, 1);
+		memcpy(&tempRect, &workingRect, sizeof(RECT));
+		::IntersectRect(&workingRect, &tempRect, &cdgDisplayRect);
 	}
 	int nScaling = 1;
 	for (int f = 0; f < g_nSmoothingPasses && f < (SUPPORTED_SCALING_LEVELS - 1); ++f) {
 		int sourceWidth = CDG_BITMAP_WIDTH * nScaling;
-		Perform2xSmoothing(g_pScaledForegroundBitmapBits[f], g_pScaledForegroundBitmapBits[f + 1], pInvalidCDGRect, sourceWidth);
+		Perform2xSmoothing(g_pScaledForegroundBitmapBits[f], g_pScaledForegroundBitmapBits[f + 1], &workingRect, sourceWidth);
 		nScaling <<= 1;
-		ScaleRect(pInvalidCDGRect, 2);
+		ScaleRect(&workingRect, 2);
 		ScaleRect(&cdgDisplayRect, 2);
 	}
-	RefreshScreen(pInvalidCDGRect);
 }
 
 void DrawForeground(RECT* pInvalidWindowRect) {
-	static RECT windowClientRect;
+	// First of all, blank out the invalid region.
+	::FillRect(g_hForegroundWindowDC, pInvalidWindowRect, g_hTransparentBrush);
+
+	// Now do some sums.
+	double nScaling = 1 << g_nSmoothingPasses;
+	double nCanvasWidthWithMargin = CDG_CANVAS_WIDTH + (g_nMargin << 1);
+	double nCanvasHeightWithMargin = CDG_CANVAS_HEIGHT + (g_nMargin << 1);
+
+	// We might have been asked to repaint the entire window. We only want to repaint
+	// the canvas between the margins, so figure out what area that is.
+	RECT windowClientRect;
 	::GetClientRect(g_hForegroundWindow, &windowClientRect);
-	int nScaling = 1 <<g_nSmoothingPasses;
 	double windowClientRectWidth = (double)windowClientRect.right - windowClientRect.left;
 	double windowClientRectHeight = (double)windowClientRect.bottom - windowClientRect.top;
-	double nInvalidRectXFactor = pInvalidWindowRect->left / windowClientRectWidth;
-	double nInvalidRectYFactor = pInvalidWindowRect->top / windowClientRectHeight;
-	double nInvalidRectWFactor = ((double)pInvalidWindowRect->right- pInvalidWindowRect->left) / windowClientRectWidth;
-	double nInvalidRectHFactor = ((double)pInvalidWindowRect->bottom- pInvalidWindowRect->top) / windowClientRectHeight;
-	int nCanvasSourceX = (int)(CDG_CANVAS_WIDTH * nScaling * nInvalidRectXFactor) + ((CDG_CANVAS_X + g_nCanvasXOffset) * nScaling);
-	int nCanvasSourceY = (int)(CDG_CANVAS_HEIGHT * nScaling * nInvalidRectYFactor) + ((CDG_CANVAS_Y + g_nCanvasYOffset) * nScaling);
-	int nCanvasWidth = (int)(CDG_CANVAS_WIDTH * nScaling * nInvalidRectWFactor);
-	int nCanvasHeight = (int)(CDG_CANVAS_HEIGHT * nScaling * nInvalidRectHFactor);
-	int nInvalidRectWidth = pInvalidWindowRect->right - pInvalidWindowRect->left;
-	int nInvalidRectHeight = pInvalidWindowRect->bottom - pInvalidWindowRect->top;
-	::FillRect(g_hForegroundWindowDC, pInvalidWindowRect, g_hTransparentBrush);
-	double scaleXMultiplier = windowClientRectWidth / CDG_CANVAS_WIDTH;
-	double scaleYMultiplier = windowClientRectHeight / CDG_CANVAS_HEIGHT;
-	int nScaledXMargin = (int)(g_nMargin * scaleXMultiplier);
-	int nScaledYMargin = (int)(g_nMargin * scaleYMultiplier);
-	::InflateRect(pInvalidWindowRect, -nScaledXMargin, -nScaledYMargin);
-	::StretchBlt(g_hForegroundWindowDC, pInvalidWindowRect->left, pInvalidWindowRect->top, nInvalidRectWidth - (nScaledXMargin << 1), nInvalidRectHeight - (nScaledYMargin << 1), g_hMaskedForegroundDC, nCanvasSourceX, nCanvasSourceY, nCanvasWidth, nCanvasHeight, SRCCOPY);
+	double marginScaleXMultiplier = windowClientRectWidth / nCanvasWidthWithMargin;
+	double marginScaleYMultiplier = windowClientRectHeight / nCanvasHeightWithMargin;
+	double nScaledXMargin = g_nMargin * marginScaleXMultiplier;
+	double nScaledYMargin = g_nMargin * marginScaleYMultiplier;
+	RECT windowCanvasRect = { (int) nScaledXMargin,(int)nScaledYMargin,(int)(windowClientRectWidth - nScaledXMargin),(int)(windowClientRectHeight - nScaledYMargin) };
+	::IntersectRect(pInvalidWindowRect, pInvalidWindowRect, &windowCanvasRect);
+
+	double bitmapScaleXMultiplier = nScaling * (nCanvasWidthWithMargin / windowClientRectWidth);
+	double bitmapScaleYMultiplier = nScaling * (nCanvasHeightWithMargin / windowClientRectHeight);
+	double bitmapLeft = (pInvalidWindowRect->left - nScaledXMargin) * bitmapScaleXMultiplier;
+	double bitmapRight = (pInvalidWindowRect->right - nScaledXMargin) * bitmapScaleXMultiplier;
+	double bitmapTop = (pInvalidWindowRect->top - nScaledYMargin) * bitmapScaleYMultiplier;
+	double bitmapBottom = (pInvalidWindowRect->bottom - nScaledYMargin) * bitmapScaleYMultiplier;
+	// We need to figure out what bit of the memory bitmap to paste onto the window.
+	RECT bitmapRect = { (int)bitmapLeft,(int)bitmapTop,(int)bitmapRight,(int)bitmapBottom };
+	// Now offset it by the actual CDG offset.
+	::OffsetRect(&bitmapRect, nScaling * (CDG_CANVAS_X + g_nCanvasXOffset), nScaling * (CDG_CANVAS_Y + g_nCanvasYOffset));
+
+	::StretchBlt(g_hForegroundWindowDC, pInvalidWindowRect->left, pInvalidWindowRect->top, pInvalidWindowRect->right - pInvalidWindowRect->left, pInvalidWindowRect->bottom - pInvalidWindowRect->top, g_hMaskedForegroundDC, bitmapRect.left, bitmapRect.top, bitmapRect.right - bitmapRect.left, bitmapRect.bottom - bitmapRect.top, SRCCOPY);
 }
 
