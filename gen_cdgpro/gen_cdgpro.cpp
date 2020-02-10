@@ -49,6 +49,9 @@ void Stop() {
 }
 
 DWORD WINAPI StartSongThread(LPVOID pParams) {
+	// By asking for the filename of the currently playing playlist entry, we get
+	// the path to the extracted media content that in_zip created. This saves
+	// us having to unzip it ourselves.
 	int listPos = ::SendMessage(g_hWinampWindow, WM_WA_IPC, 0, IPC_GETLISTPOS);
 	const WCHAR* fileBeingPlayed = (const WCHAR*)::SendMessage(g_hWinampWindow, WM_WA_IPC, listPos, IPC_GETPLAYLISTFILEW);
 	bool isCDGProcessorRunning = WaitForSingleObject(g_hStoppedCDGProcessingEvent, 0) == WAIT_TIMEOUT;
@@ -75,13 +78,11 @@ LRESULT CALLBACK CdgProWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lPara
 	case WM_WA_IPC:
 		switch (lParam) {
 		case IPC_PLAYING_FILEW: {
-			const WCHAR* pszSongTitle = (const WCHAR*)wParam;
-			size_t nStrLen = (wcslen(pszSongTitle) + 1);
-			WCHAR* pszSongTitleCopy = (WCHAR*)malloc(sizeof(WCHAR) * nStrLen);
-			if (pszSongTitleCopy) {
-				wcscpy_s(pszSongTitleCopy, nStrLen, pszSongTitle);
-				::CreateThread(NULL, 0, StartSongThread, (LPVOID)pszSongTitleCopy, 0, NULL);
-			}
+			// This provides a path to the file being playing, but if it's a zip, that's
+			// what you get: the path to the ZIP. We want the path to the extracted
+			// media file, which is in TEMP somewhere. That's what the various
+			// SendMessage calls in the StartSongThread method do.
+			::CreateThread(NULL, 0, StartSongThread, NULL, 0, NULL);
 			break;
 		}
 		case IPC_CB_MISC:
