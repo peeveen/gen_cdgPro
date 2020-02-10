@@ -87,6 +87,8 @@ typedef struct {
 // WinAmp messages.
 #define WM_WA_IPC WM_USER
 #define IPC_PLAYING_FILEW 13003
+#define IPC_GETLISTPOS 125
+#define IPC_GETPLAYLISTFILEW 214
 #define IPC_CB_MISC 603
 #define IPC_ISPLAYING 104
 #define IPC_GETOUTPUTTIME 105

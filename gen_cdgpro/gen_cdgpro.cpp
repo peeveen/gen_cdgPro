@@ -49,7 +49,8 @@ void Stop() {
 }
 
 DWORD WINAPI StartSongThread(LPVOID pParams) {
-	const WCHAR* fileBeingPlayed = (const WCHAR*)pParams;
+	int listPos = ::SendMessage(g_hWinampWindow, WM_WA_IPC, 0, IPC_GETLISTPOS);
+	const WCHAR* fileBeingPlayed = (const WCHAR*)::SendMessage(g_hWinampWindow, WM_WA_IPC, listPos, IPC_GETPLAYLISTFILEW);
 	bool isCDGProcessorRunning = WaitForSingleObject(g_hStoppedCDGProcessingEvent, 0) == WAIT_TIMEOUT;
 	if (isCDGProcessorRunning) {
 		::SetEvent(g_hStopCDGProcessingEvent);
