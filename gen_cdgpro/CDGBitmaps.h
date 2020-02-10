@@ -1,5 +1,12 @@
 #pragma once
 
+#include <objidl.h>
+#include <stdlib.h>
+#include <gdiplus.h>
+#include <gdipluscolor.h>
+#pragma comment (lib,"Gdiplus.lib")
+using namespace Gdiplus;
+
 bool CreateBitmaps();
 void DestroyBitmaps();
 void ClearForegroundBuffer();
@@ -29,3 +36,4 @@ extern HDC g_hScreenDC;
 extern HBRUSH g_hTransparentBrush;
 
 extern SIZE g_logoSize;
+extern Image *g_pLogoImage;

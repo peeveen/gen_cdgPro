@@ -5,7 +5,7 @@ void SetFullScreen(bool fullScreen);
 bool CreateWindows();
 void DestroyWindows();
 bool IsFullScreen();
-void ShowLogo(bool bShow);
+void ShowWindows(bool bSongPlaying);
 
 extern HDC g_hForegroundWindowDC;
 extern HWND g_hForegroundWindow;

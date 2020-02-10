@@ -61,14 +61,37 @@ void UpdateLogoPosition() {
 	::UpdateLayeredWindow(g_hLogoWindow, g_hScreenDC, &topLeft, &logoSize, g_hLogoDC, &logoSourcePoint, 0, &g_blendFn, ULW_ALPHA);
 }
 
-void ShowLogo(bool bShow) {
-	::ShowWindow(g_hLogoWindow, bShow?SW_SHOW:SW_HIDE);
+void ShowWindows(bool bSongPlaying) {
+	// If a song is playing, then show all windows EXCEPT the logo window.
+	// If a song is NOT playing, then:
+	//		If there is a logo, show all windows.
+	//		If there is NOT a logo, hide all windows.
 	DWORD exStyle = ::GetWindowLong(g_hForegroundWindow, GWL_EXSTYLE);
-	if (bShow)
-		exStyle &= ~WS_EX_APPWINDOW;
-	else
+	if (bSongPlaying) {
+		::ShowWindow(g_hLogoWindow, SW_HIDE);
+		// The foreground window should now be the app window.
 		exStyle |= WS_EX_APPWINDOW;
-	::SetWindowLong(g_hForegroundWindow, GWL_EXSTYLE, exStyle);
+		::SetWindowLong(g_hForegroundWindow, GWL_EXSTYLE, exStyle);
+		::ShowWindow(g_hBackgroundWindow, SW_SHOW);
+		::ShowWindow(g_hForegroundWindow, SW_SHOW);
+	}
+	else {
+		if (g_pLogoImage) {
+			// If the IS a logo, then we want the logo to be the "app window", so
+			// that's what appears in the alt-tab menu, etc. For that to happen,
+			// we have to remove that flag from the foreground window.
+			exStyle &= ~WS_EX_APPWINDOW;
+			::SetWindowLong(g_hForegroundWindow, GWL_EXSTYLE, exStyle);
+			::ShowWindow(g_hBackgroundWindow, SW_SHOW);
+			::ShowWindow(g_hForegroundWindow, SW_SHOW);
+			::ShowWindow(g_hLogoWindow, SW_SHOW);
+		}
+		else {
+			::ShowWindow(g_hLogoWindow, SW_HIDE);
+			::ShowWindow(g_hForegroundWindow, SW_HIDE);
+			::ShowWindow(g_hBackgroundWindow, SW_HIDE);
+		}
+	}
 }
 
 bool IsFullScreen() {
@@ -122,6 +145,8 @@ LRESULT CALLBACK ForegroundWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARA
 		}
 		break;
 	case WM_SHOWWINDOW:
+		if (!wParam)
+			break;
 	case WM_WINDOWPOSCHANGED:
 		::SetWindowPos(g_hBackgroundWindow, hwnd, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
 		::SetWindowPos(g_hLogoWindow,NULL, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE|SWP_NOACTIVATE);
@@ -168,8 +193,10 @@ LRESULT CALLBACK BackgroundWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARA
 	case WM_PAINT:
 		DrawBackground();
 		break;
-	case WM_WINDOWPOSCHANGED:
 	case WM_SHOWWINDOW:
+		if (!wParam)
+			break;
+	case WM_WINDOWPOSCHANGED:
 		::SetWindowPos(hwnd, g_hForegroundWindow, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
 		break;
 	}
@@ -200,8 +227,10 @@ LRESULT CALLBACK LogoWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lPar
 		ShowMenu(xPos, yPos);
 		break;
 	}
-	case WM_WINDOWPOSCHANGED:
 	case WM_SHOWWINDOW:
+		if (!wParam)
+			break;
+	case WM_WINDOWPOSCHANGED:
 		::SetWindowPos(g_hForegroundWindow,hwnd, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
 		break;
 	}
@@ -243,13 +272,13 @@ ATOM RegisterLogoWindowClass() {
 }
 
 bool CreateCDGWindow(HWND* phWnd, HDC* phDC, const WCHAR* pszClassName, DWORD additionalStyles, DWORD additionalExStyles) {
-	DWORD styles = WS_VISIBLE | additionalStyles;
+	DWORD styles = additionalStyles;
 	*phWnd = CreateWindowEx(
 		WS_EX_LAYERED | additionalExStyles,
 		pszClassName,
 		g_pszWindowCaption,
 		styles,
-		50, 50,
+		CW_USEDEFAULT, CW_USEDEFAULT,
 		CDG_WIDTH, CDG_HEIGHT,
 		// We don't want this window to minimize/restore along with WinAmp, so we don't
 		// tell Windows that this is a child of WinAmp.

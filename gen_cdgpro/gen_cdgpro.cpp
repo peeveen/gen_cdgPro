@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include <shellapi.h>
 #include <malloc.h>
 #include <objidl.h>
 #include <gdiplus.h>
@@ -41,7 +42,7 @@ extern "C" __declspec(dllexport) winampGeneralPurposePlugin * winampGetGeneralPu
 
 void Stop() {
 	ResetProcessor();
-	ShowLogo(true);
+	ShowWindows(false);
 	::ZeroMemory(g_pScaledForegroundBitmapBits[0], (CDG_BITMAP_WIDTH * CDG_BITMAP_HEIGHT) / 2);
 	::RedrawWindow(g_hForegroundWindow, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
 	::RedrawWindow(g_hBackgroundWindow, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
@@ -58,8 +59,8 @@ DWORD WINAPI StartSongThread(LPVOID pParams) {
 	else
 		::SetEvent(g_hStoppedCDGProcessingEvent);
 	if (ReadCDGData(fileBeingPlayed)) {
+		ShowWindows(true);
 		::SetEvent(g_hSongLoadedEvent);
-		ShowLogo(false);
 	}
 	else
 		Stop();
@@ -111,10 +112,13 @@ int init() {
 	CreateBitmaps();
 	StartCDGProcessor();
 
+	ShowWindows(false);
+
 	return 0;
 }
 
 void config() {
+	::ShellExecute(g_hWinampWindow, L"edit", g_szINIPath, NULL, NULL, SW_SHOWDEFAULT);
 }
 
 void quit() {

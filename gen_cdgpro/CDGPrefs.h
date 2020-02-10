@@ -8,8 +8,9 @@
 #define BDM_BOTTOMLEFTPIXEL 3
 #define BDM_BOTTOMRIGHTPIXEL 4
 
-void ReadPrefs();
+bool ReadPrefs();
 
+extern WCHAR g_szINIPath[];
 extern int g_nBackgroundOpacity;
 extern bool g_bDrawOutline;
 extern double g_nTimeScaler;

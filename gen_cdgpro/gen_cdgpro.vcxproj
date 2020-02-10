@@ -136,7 +136,7 @@
       <AdditionalDependencies>Msimg32.lib;libz-static.lib;libzip-static.lib;kernel32.lib;user32.lib;gdi32.lib;comdlg32.lib;advapi32.lib;shell32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PostBuildEvent>
-      <Command>copy "$(OutDir)\$(TargetFileName)" "C:\Program Files (x86)\Winamp\Plugins"</Command>
+      <Command>copy "$(OutDir)\$(TargetFileName)" "C:\Program Files (x86)\Winamp\Plugins" &amp;&amp; copy "$(SolutionDir)\gen_cdgPro.ini" "C:\Program Files (x86)\Winamp\Plugins"</Command>
       <Message>Copying DLL to WinAmp plugins folder.</Message>
     </PostBuildEvent>
   </ItemDefinitionGroup>
@@ -203,6 +203,9 @@
     <Image Include="checked.bmp" />
     <Image Include="unchecked.bmp" />
     <Image Include="winampIcon.ico" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\gen_cdgPro.ini" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

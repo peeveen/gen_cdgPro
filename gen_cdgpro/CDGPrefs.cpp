@@ -5,6 +5,9 @@
 
 #define PREF_BUFFER_SIZE (MAX_PATH*2)
 
+// Path to the INI file
+WCHAR g_szINIPath[MAX_PATH + 1];
+// How opaque should the window be?
 int g_nBackgroundOpacity = 192;
 // Draw an outline around the foreground graphics for increased visibility?
 bool g_bDrawOutline = true;
@@ -114,30 +117,40 @@ void SetLogoPath(WCHAR* pszPrefLine) {
 	SetString(pszPrefLine, L"logopath", g_szLogoPath);
 }
 
-void ReadPrefs() {
-	WCHAR szBuffer[PREF_BUFFER_SIZE];
-	if (GetModuleFileName(g_hInstance, szBuffer, MAX_PATH)) {
-		WCHAR* pszLastSlash = wcsrchr(szBuffer, '\\');
+bool SetINIPath() {
+	g_szINIPath[0] = '\0';
+	if (GetModuleFileName(g_hInstance, g_szINIPath, MAX_PATH)) {
+		WCHAR* pszLastSlash = wcsrchr(g_szINIPath, '\\');
 		if (pszLastSlash) {
 			*(pszLastSlash + 1) = '\0';
-			wcscat_s(szBuffer, L"gen_cdgPro.ini");
-			FILE* pFile = NULL;
-			errno_t error=_wfopen_s(&pFile,szBuffer, L"rt");
-			if (pFile && !error) {
-				while (fgetws(szBuffer, PREF_BUFFER_SIZE, pFile)) {
-					_wcslwr_s(szBuffer);
-					TrimLeading(szBuffer);
-					SetOpacity(szBuffer);
-					SetBackgroundColor(szBuffer);
-					SetBackgroundDetectionMode(szBuffer);
-					SetSmoothingPasses(szBuffer);
-					SetMargin(szBuffer);
-					SetOutline(szBuffer);
-					SetLogoPath(szBuffer);
-					SetDoubleBuffered(szBuffer);
-				}
-				fclose(pFile);
-			}
+			wcscat_s(g_szINIPath, L"gen_cdgPro.ini");
+			return true;
 		}
 	}
+	return false;
+}
+
+bool ReadPrefs() {
+	if(SetINIPath()){
+		FILE* pFile = NULL;
+		errno_t error=_wfopen_s(&pFile,g_szINIPath, L"rt");
+		if (pFile && !error) {
+			WCHAR szBuffer[PREF_BUFFER_SIZE];
+			while (fgetws(szBuffer, PREF_BUFFER_SIZE, pFile)) {
+				_wcslwr_s(szBuffer);
+				TrimLeading(szBuffer);
+				SetOpacity(szBuffer);
+				SetBackgroundColor(szBuffer);
+				SetBackgroundDetectionMode(szBuffer);
+				SetSmoothingPasses(szBuffer);
+				SetMargin(szBuffer);
+				SetOutline(szBuffer);
+				SetLogoPath(szBuffer);
+				SetDoubleBuffered(szBuffer);
+			}
+			fclose(pFile);
+			return true;
+		}
+	}
+	return false;
 }
