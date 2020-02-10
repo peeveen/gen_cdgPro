@@ -54,21 +54,22 @@ DWORD WINAPI StartSongThread(LPVOID pParams) {
 	// us having to unzip it ourselves.
 	int listPos = ::SendMessage(g_hWinampWindow, WM_WA_IPC, 0, IPC_GETLISTPOS);
 	const WCHAR* fileBeingPlayed = (const WCHAR*)::SendMessage(g_hWinampWindow, WM_WA_IPC, listPos, IPC_GETPLAYLISTFILEW);
-	bool isCDGProcessorRunning = WaitForSingleObject(g_hStoppedCDGProcessingEvent, 0) == WAIT_TIMEOUT;
-	if (isCDGProcessorRunning) {
-		::SetEvent(g_hStopCDGProcessingEvent);
-		::WaitForSingleObject(g_hStoppedCDGProcessingEvent, INFINITE);
-		::ResetEvent(g_hStopCDGProcessingEvent);
+	if (fileBeingPlayed) {
+		bool isCDGProcessorRunning = WaitForSingleObject(g_hStoppedCDGProcessingEvent, 0) == WAIT_TIMEOUT;
+		if (isCDGProcessorRunning) {
+			::SetEvent(g_hStopCDGProcessingEvent);
+			::WaitForSingleObject(g_hStoppedCDGProcessingEvent, INFINITE);
+			::ResetEvent(g_hStopCDGProcessingEvent);
+		}
+		else
+			::SetEvent(g_hStoppedCDGProcessingEvent);
+		if (ReadCDGData(fileBeingPlayed)) {
+			ShowWindows(true);
+			::SetEvent(g_hSongLoadedEvent);
+		}
+		else
+			Stop();
 	}
-	else
-		::SetEvent(g_hStoppedCDGProcessingEvent);
-	if (ReadCDGData(fileBeingPlayed)) {
-		ShowWindows(true);
-		::SetEvent(g_hSongLoadedEvent);
-	}
-	else
-		Stop();
-	free(pParams);
 	return 0;
 }
 
