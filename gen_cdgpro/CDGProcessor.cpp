@@ -109,6 +109,12 @@ DWORD WINAPI CDGProcessor(LPVOID pParams) {
 						RedrawForeground(&invalidRect);
 					if (result & 0x04)
 						RefreshScreen(NULL);
+					// Note that it is absolutely impossible to only invalidate the redrawn area of the window.
+					// We are using StretchBlt to copy the memory bitmap to the screen. This performs a certain
+					// amount of "between pixel" logic. For example, if we stretch a 20x20 bitmap to 30x30, it
+					// will render 10 extra "halfway house" pixels in each direction. We cannot tell it to START
+					// rendering on one of these pixels! If we attempt to invalidate only the redrawn area,
+					// the pixels start shifting around in a noticably greasy fashion.
 					if (result & 0x05)
 						::RedrawWindow(g_hForegroundWindow, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
 					if (result & 0x02)

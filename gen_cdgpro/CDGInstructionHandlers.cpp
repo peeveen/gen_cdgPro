@@ -17,7 +17,7 @@ BYTE MemoryPreset(BYTE color) {
 	for(int f=0;f<SUPPORTED_SCALING_LEVELS;++f)
 		memset(g_pScaledForegroundBitmapBits[f], colorByte, ((((CDG_BITMAP_WIDTH >> 1) << f) * (CDG_BITMAP_HEIGHT << f))));
 	g_nLastMemoryPresetColor = color;
-	byte result = 0x05;
+	byte result = 0x04;
 	if (g_nBackgroundDetectionMode == BDM_TOPLEFTPIXEL || g_nBackgroundDetectionMode == BDM_TOPRIGHTPIXEL || g_nBackgroundDetectionMode == BDM_BOTTOMLEFTPIXEL || g_nBackgroundDetectionMode == BDM_BOTTOMRIGHTPIXEL) {
 		// All pixels will be the same value at this point, so use any corner.
 		SetBackgroundColorFromPixel(TOP_LEFT_PIXEL_OFFSET, true);
@@ -98,15 +98,17 @@ BYTE TileBlock(BYTE* pData, bool isXor, RECT *pInvalidRect) {
 		foregroundBitmapOffset += (CDG_BITMAP_WIDTH / 2);
 	}
 	// Did we write to the non-border screen area?
-	BYTE result = (row < (CDG_HEIGHT_CELLS - 1) && row>0 && col < (CDG_WIDTH_CELLS - 1) && col>0) ? 0x03 : 0x02;
-	// Also need to know if the background needs refreshed.
-	bool topLeftPixelSet = col == 1 && row == 1;
-	bool topRightPixelSet = col == CDG_WIDTH_CELLS - 2 && row == 1;
-	bool bottomLeftPixelSet = col == 1 && row == CDG_HEIGHT_CELLS - 2;
-	bool bottomRightPixelSet = col == CDG_WIDTH_CELLS - 2 && row == CDG_HEIGHT_CELLS - 2;
-	if (topLeftPixelSet || topRightPixelSet || bottomLeftPixelSet || bottomRightPixelSet)
-		if (!CheckPixelColorBackgroundChange(topLeftPixelSet, topRightPixelSet, bottomLeftPixelSet, bottomRightPixelSet))
-			result &= 0x01;
+	BYTE result = (row < (CDG_HEIGHT_CELLS - 1) && row>0 && col < (CDG_WIDTH_CELLS - 1) && col>0) ? 0x01 : 0x00;
+	if (result) {
+		// Also need to know if the background needs refreshed.
+		bool topLeftPixelSet = col == 1 && row == 1;
+		bool topRightPixelSet = col == CDG_WIDTH_CELLS - 2 && row == 1;
+		bool bottomLeftPixelSet = col == 1 && row == CDG_HEIGHT_CELLS - 2;
+		bool bottomRightPixelSet = col == CDG_WIDTH_CELLS - 2 && row == CDG_HEIGHT_CELLS - 2;
+		if (topLeftPixelSet || topRightPixelSet || bottomLeftPixelSet || bottomRightPixelSet)
+			if (CheckPixelColorBackgroundChange(topLeftPixelSet, topRightPixelSet, bottomLeftPixelSet, bottomRightPixelSet))
+				result |= 0x02;
+	}
 	// Screen is no longer blank.
 	g_nLastMemoryPresetColor = -1;
 	return result;
@@ -129,7 +131,7 @@ BYTE LoadColorTable(BYTE* pData, bool highTable) {
 		rgbQuads[f] = { blue,green,red,0 };
 	}
 	SetPalette(rgbQuads, nPaletteStartIndex, 8);
-	return 0x05 | (g_nCurrentTransparentIndex >= nPaletteStartIndex && g_nCurrentTransparentIndex < nPaletteStartIndex + 8 ? 0x02 : 0x00);
+	return 0x04 | (g_nCurrentTransparentIndex >= nPaletteStartIndex && g_nCurrentTransparentIndex < nPaletteStartIndex + 8 ? 0x02 : 0x00);
 }
 
 BYTE Scroll(BYTE color, BYTE hScroll, BYTE hScrollOffset, BYTE vScroll, BYTE vScrollOffset, bool copy,RECT *pInvalidRect) {
