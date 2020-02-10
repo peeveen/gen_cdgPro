@@ -109,6 +109,45 @@ BEGIN
     0
 END
 
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Version
+//
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION 1,0,0,1
+ PRODUCTVERSION 1,0,0,1
+ FILEFLAGSMASK 0x3fL
+#ifdef _DEBUG
+ FILEFLAGS 0x1L
+#else
+ FILEFLAGS 0x0L
+#endif
+ FILEOS 0x40004L
+ FILETYPE 0x2L
+ FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "080904b0"
+        BEGIN
+            VALUE "CompanyName", "FullHouse Karaoke"
+            VALUE "FileDescription", "CDG Pro plugin for WinAmp"
+            VALUE "FileVersion", "1.0.0.1"
+            VALUE "InternalName", "gen_cdgpro.dll"
+            VALUE "LegalCopyright", "Copyright (C) 2020 FullHouse Karaoke "
+            VALUE "OriginalFilename", "gen_cdgpro.dll"
+            VALUE "ProductName", "CDG Pro"
+            VALUE "ProductVersion", "1.0.0.1"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x809, 1200
+    END
+END
+
 #endif    // English (United Kingdom) resources
 /////////////////////////////////////////////////////////////////////////////
 
