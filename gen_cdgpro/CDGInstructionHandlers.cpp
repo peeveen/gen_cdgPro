@@ -10,16 +10,14 @@
 // again before anything else has been drawn, we can ignore it.
 BYTE g_nLastMemoryPresetColor = -1;
 
-BYTE MemoryPreset(BYTE color, RECT* pRepaintRect) {
+BYTE MemoryPreset(BYTE color) {
 	if (g_nLastMemoryPresetColor == color)
 		return 0x00;
-	// Entire screen needs repainted
-	*pRepaintRect = { CDG_CANVAS_X,CDG_CANVAS_Y,CDG_CANVAS_X + CDG_CANVAS_WIDTH,CDG_CANVAS_Y + CDG_CANVAS_HEIGHT };
 	BYTE colorByte = (color << 4) | color;
 	for(int f=0;f<SUPPORTED_SCALING_LEVELS;++f)
 		memset(g_pScaledForegroundBitmapBits[f], colorByte, ((((CDG_BITMAP_WIDTH >> 1) << f) * (CDG_BITMAP_HEIGHT << f))));
 	g_nLastMemoryPresetColor = color;
-	byte result = 0x04;
+	byte result = 0x05;
 	if (g_nBackgroundDetectionMode == BDM_TOPLEFTPIXEL || g_nBackgroundDetectionMode == BDM_TOPRIGHTPIXEL || g_nBackgroundDetectionMode == BDM_BOTTOMLEFTPIXEL || g_nBackgroundDetectionMode == BDM_BOTTOMRIGHTPIXEL) {
 		// All pixels will be the same value at this point, so use any corner.
 		SetBackgroundColorFromPixel(TOP_LEFT_PIXEL_OFFSET, true);
@@ -50,14 +48,17 @@ BYTE BorderPreset(BYTE color) {
 	}
 	// Screen is no longer "blank".
 	g_nLastMemoryPresetColor = -1;
-	return 0x00;
+	return 0x04;
 }
 
-BYTE TileBlock(BYTE* pData, bool isXor, RECT *pRedrawRect,RECT *pRepaintRect) {
+BYTE TileBlock(BYTE* pData, bool isXor, RECT *pInvalidRect) {
 	// 3 byte buffer that we will use to set values in the CDG raster.
 	static BYTE g_blockBuffer[3];
 	BYTE bgColor = pData[0] & 0x0F;
 	BYTE fgColor = pData[1] & 0x0F;
+	// Python CDG parser code suggests this bit means "ignore this command"?
+	//if (pData[1] & 0x20)
+	//	return;
 	BYTE row = pData[2] & 0x3F;
 	BYTE col = pData[3] & 0x3F;
 	// If the coordinates are offscreen, reject them as bad data.
@@ -68,19 +69,12 @@ BYTE TileBlock(BYTE* pData, bool isXor, RECT *pRedrawRect,RECT *pRepaintRect) {
 	int xPixel = col * CDG_CELL_WIDTH;
 	int yPixel = row * CDG_CELL_HEIGHT;
 	RECT tileRect = { xPixel,yPixel,xPixel + CDG_CELL_WIDTH,yPixel + CDG_CELL_HEIGHT };
-	if (!(pRedrawRect->right))
-		memcpy(pRedrawRect, &tileRect, sizeof(RECT));
+	if (!(pInvalidRect->right))
+		memcpy(pInvalidRect, &tileRect, sizeof(RECT));
 	else {
 		static RECT tempRect;
-		memcpy(&tempRect, pRedrawRect, sizeof(RECT));
-		::UnionRect(pRedrawRect, &tempRect, &tileRect);
-	}
-	if (!(pRepaintRect->right))
-		memcpy(pRepaintRect, &pRedrawRect, sizeof(RECT));
-	else {
-		static RECT tempRect;
-		memcpy(&tempRect, pRepaintRect, sizeof(RECT));
-		::UnionRect(pRepaintRect, &tempRect, pRedrawRect);
+		memcpy(&tempRect, pInvalidRect, sizeof(RECT));
+		::UnionRect(pInvalidRect, &tempRect, &tileRect);
 	}
 	int foregroundBitmapOffset = ((xPixel)+(yPixel * CDG_BITMAP_WIDTH)) / 2;
 	BYTE* pForegroundBitmapBits = g_pScaledForegroundBitmapBits[0];
@@ -104,25 +98,21 @@ BYTE TileBlock(BYTE* pData, bool isXor, RECT *pRedrawRect,RECT *pRepaintRect) {
 		foregroundBitmapOffset += (CDG_BITMAP_WIDTH / 2);
 	}
 	// Did we write to the non-border screen area?
-	BYTE result = (row < (CDG_HEIGHT_CELLS - 1) && row>0 && col < (CDG_WIDTH_CELLS - 1) && col>0) ? 0x05 : 0x01;
+	BYTE result = (row < (CDG_HEIGHT_CELLS - 1) && row>0 && col < (CDG_WIDTH_CELLS - 1) && col>0) ? 0x03 : 0x02;
 	// Also need to know if the background needs refreshed.
-	if (result) {
-		bool topLeftPixelSet = col == 1 && row == 1;
-		bool topRightPixelSet = col == CDG_WIDTH_CELLS - 2 && row == 1;
-		bool bottomLeftPixelSet = col == 1 && row == CDG_HEIGHT_CELLS - 2;
-		bool bottomRightPixelSet = col == CDG_WIDTH_CELLS - 2 && row == CDG_HEIGHT_CELLS - 2;
-		if (topLeftPixelSet || topRightPixelSet || bottomLeftPixelSet || bottomRightPixelSet)
-			if (CheckPixelColorBackgroundChange(topLeftPixelSet, topRightPixelSet, bottomLeftPixelSet, bottomRightPixelSet))
-				result |= 0x02;
-	}
+	bool topLeftPixelSet = col == 1 && row == 1;
+	bool topRightPixelSet = col == CDG_WIDTH_CELLS - 2 && row == 1;
+	bool bottomLeftPixelSet = col == 1 && row == CDG_HEIGHT_CELLS - 2;
+	bool bottomRightPixelSet = col == CDG_WIDTH_CELLS - 2 && row == CDG_HEIGHT_CELLS - 2;
+	if (topLeftPixelSet || topRightPixelSet || bottomLeftPixelSet || bottomRightPixelSet)
+		if (!CheckPixelColorBackgroundChange(topLeftPixelSet, topRightPixelSet, bottomLeftPixelSet, bottomRightPixelSet))
+			result &= 0x01;
 	// Screen is no longer blank.
 	g_nLastMemoryPresetColor = -1;
 	return result;
 }
 
-BYTE LoadColorTable(BYTE* pData, bool highTable,RECT *pRepaintRect) {
-	// Entire screen needs repainted
-	*pRepaintRect = { CDG_CANVAS_X,CDG_CANVAS_Y,CDG_CANVAS_X + CDG_CANVAS_WIDTH,CDG_CANVAS_Y + CDG_CANVAS_HEIGHT };
+BYTE LoadColorTable(BYTE* pData, bool highTable) {
 	int nPaletteStartIndex = highTable ? 8 : 0;
 	RGBQUAD rgbQuads[8];
 	for (int f = 0; f < 8; ++f) {
@@ -139,13 +129,12 @@ BYTE LoadColorTable(BYTE* pData, bool highTable,RECT *pRepaintRect) {
 		rgbQuads[f] = { blue,green,red,0 };
 	}
 	SetPalette(rgbQuads, nPaletteStartIndex, 8);
-	return 0x04 | (g_nCurrentTransparentIndex >= nPaletteStartIndex && g_nCurrentTransparentIndex < nPaletteStartIndex + 8 ? 0x02 : 0x00);
+	return 0x05 | (g_nCurrentTransparentIndex >= nPaletteStartIndex && g_nCurrentTransparentIndex < nPaletteStartIndex + 8 ? 0x02 : 0x00);
 }
 
-BYTE Scroll(BYTE color, BYTE hScroll, BYTE hScrollOffset, BYTE vScroll, BYTE vScrollOffset, bool copy,RECT *pRedrawRect,RECT *pRepaintRect) {
-	// Entire screen needs redrawn and repainted after this.
-	*pRepaintRect = { CDG_CANVAS_X,CDG_CANVAS_Y,CDG_CANVAS_X + CDG_CANVAS_WIDTH,CDG_CANVAS_Y + CDG_CANVAS_HEIGHT };
-	*pRedrawRect = { 0,0,CDG_WIDTH,CDG_HEIGHT };
+BYTE Scroll(BYTE color, BYTE hScroll, BYTE hScrollOffset, BYTE vScroll, BYTE vScrollOffset, bool copy,RECT *pInvalidRect) {
+	// Entire screen needs redrawn after this.
+	*pInvalidRect = { 0,0,CDG_WIDTH,CDG_HEIGHT };
 	int nHScrollPixels = ((hScroll == 2 ? -1 : (hScroll == 1 ? 1 : 0)) * CDG_CELL_WIDTH);
 	int nVScrollPixels = ((vScroll == 2 ? -1 : (vScroll == 1 ? 1 : 0)) * CDG_CELL_HEIGHT);
 	g_nCanvasXOffset = hScrollOffset;
@@ -196,5 +185,5 @@ BYTE Scroll(BYTE color, BYTE hScroll, BYTE hScrollOffset, BYTE vScroll, BYTE vSc
 		::SelectObject(hForegroundDC, oldBrush);
 		::DeleteObject(solidBrush);
 	}
-	return CheckPixelColorBackgroundChange(true, true, true, true) ? 0x07 : 0x05;
+	return CheckPixelColorBackgroundChange(true, true, true, true) ? 0x03 : 0x01;
 }

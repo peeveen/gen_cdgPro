@@ -6,7 +6,6 @@ bool CreateWindows();
 void DestroyWindows();
 bool IsFullScreen();
 void ShowWindows(bool bSongPlaying);
-void CDGRectToWindowRect(RECT* pRect);
 
 extern HDC g_hForegroundWindowDC;
 extern HWND g_hForegroundWindow;

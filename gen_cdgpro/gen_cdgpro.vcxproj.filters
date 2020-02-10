@@ -66,9 +66,6 @@
     <ClInclude Include="CDGPalette.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="CDGUtils.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="stdafx.cpp">
@@ -105,9 +102,6 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="CDGPalette.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="CDGUtils.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

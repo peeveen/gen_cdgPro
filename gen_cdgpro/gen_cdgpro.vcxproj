@@ -170,7 +170,6 @@
     <ClInclude Include="CDGProcessor.h" />
     <ClInclude Include="CDGReader.h" />
     <ClInclude Include="CDGRender.h" />
-    <ClInclude Include="CDGUtils.h" />
     <ClInclude Include="CDGWindows.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="stdafx.h" />
@@ -187,7 +186,6 @@
     <ClCompile Include="CDGProcessor.cpp" />
     <ClCompile Include="CDGReader.cpp" />
     <ClCompile Include="CDGRender.cpp" />
-    <ClCompile Include="CDGUtils.cpp" />
     <ClCompile Include="CDGWindows.cpp" />
     <ClCompile Include="gen_cdgpro.cpp" />
     <ClCompile Include="CDGInstructionHandlers.cpp" />
