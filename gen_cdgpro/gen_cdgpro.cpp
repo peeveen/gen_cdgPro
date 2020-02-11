@@ -124,10 +124,9 @@ void config() {
 }
 
 void quit() {
-	StopCDGProcessor();
-	ClearExistingCDGData();
-	DestroyRightClickMenu();
 	DestroyWindows();
+	DestroyRightClickMenu();
+	StopCDGProcessor();
 	DestroyBitmaps();
 	::GdiplusShutdown(g_gdiPlusToken);
 	::SetWindowLong(plugin.hwndParent, GWL_WNDPROC, (LONG)g_pOriginalWndProc);

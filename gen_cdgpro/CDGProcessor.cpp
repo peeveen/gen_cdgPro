@@ -191,4 +191,5 @@ void StopCDGProcessor() {
 	::CloseHandle(g_hStoppedCDGProcessingEvent);
 	::CloseHandle(g_hStopCDGThreadEvent);
 	::CloseHandle(g_hSongLoadedEvent);
+	ClearExistingCDGData();
 }

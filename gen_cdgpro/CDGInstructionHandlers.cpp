@@ -94,18 +94,15 @@ BYTE TileBlock(BYTE* pData, bool isXor, RECT *pInvalidRect) {
 		}
 		foregroundBitmapOffset += (CDG_BITMAP_WIDTH / 2);
 	}
-	// Did we write to the non-border screen area?
-	BYTE result = (row < (CDG_HEIGHT_CELLS - 1) && row>0 && col < (CDG_WIDTH_CELLS - 1) && col>0) ? 0x01 : 0x00;
-	if (result) {
-		// Also need to know if the background needs refreshed.
-		bool topLeftPixelSet = col == 1 && row == 1;
-		bool topRightPixelSet = col == CDG_WIDTH_CELLS - 2 && row == 1;
-		bool bottomLeftPixelSet = col == 1 && row == CDG_HEIGHT_CELLS - 2;
-		bool bottomRightPixelSet = col == CDG_WIDTH_CELLS - 2 && row == CDG_HEIGHT_CELLS - 2;
-		if (topLeftPixelSet || topRightPixelSet || bottomLeftPixelSet || bottomRightPixelSet)
-			if (CheckPixelColorBackgroundChange(topLeftPixelSet, topRightPixelSet, bottomLeftPixelSet, bottomRightPixelSet))
-				result |= 0x02;
-	}
+	BYTE result = 0x01;
+	// Also need to know if the background needs refreshed.
+	bool topLeftPixelSet = col == 1 && row == 1;
+	bool topRightPixelSet = col == CDG_WIDTH_CELLS - 2 && row == 1;
+	bool bottomLeftPixelSet = col == 1 && row == CDG_HEIGHT_CELLS - 2;
+	bool bottomRightPixelSet = col == CDG_WIDTH_CELLS - 2 && row == CDG_HEIGHT_CELLS - 2;
+	if (topLeftPixelSet || topRightPixelSet || bottomLeftPixelSet || bottomRightPixelSet)
+		if (CheckPixelColorBackgroundChange(topLeftPixelSet, topRightPixelSet, bottomLeftPixelSet, bottomRightPixelSet))
+			result |= 0x02;
 	// Screen is no longer blank.
 	g_nLastMemoryPresetColor = -1;
 	return result;

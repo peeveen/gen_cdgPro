@@ -87,11 +87,11 @@ void DrawBackground() {
 	::StretchBlt(g_hBackgroundWindowDC, 0, 0, r.right - r.left, r.bottom - r.top, g_hBackgroundDC, 0, 0, 1, 1, SRCCOPY);
 }
 
-void ScaleRect(RECT* pRect, int factor) {
-	pRect->left *= factor;
-	pRect->right *= factor;
-	pRect->top *= factor;
-	pRect->bottom *= factor;
+void DoubleRect(RECT* pRect) {
+	pRect->left <<= 1;
+	pRect->right <<= 1;
+	pRect->top <<= 1;
+	pRect->bottom <<= 1;
 }
 
 void RefreshScreen(RECT* pInvalidCDGRect) {
@@ -134,34 +134,33 @@ void RedrawForeground(RECT* pInvalidCDGRect) {
 		int sourceWidth = CDG_BITMAP_WIDTH * nScaling;
 		Perform2xSmoothing(g_pScaledForegroundBitmapBits[f], g_pScaledForegroundBitmapBits[f + 1], pInvalidCDGRect, sourceWidth);
 		nScaling <<= 1;
-		ScaleRect(pInvalidCDGRect, 2);
-		ScaleRect(&cdgDisplayRect, 2);
+		DoubleRect(pInvalidCDGRect);
+		DoubleRect(&cdgDisplayRect);
 	}
 	RefreshScreen(pInvalidCDGRect);
 }
 
 void DrawForeground(RECT* pInvalidWindowRect) {
+	// Due to the nature of StretchBlt, there is no point getting fancy here and calculating the
+	// exact bit that needs refreshed. It will never look right. We will just blast the entire
+	// bitmap onto the entire window.
 	static RECT windowClientRect;
 	::GetClientRect(g_hForegroundWindow, &windowClientRect);
 	int nScaling = 1 <<g_nSmoothingPasses;
-	double windowClientRectWidth = (double)windowClientRect.right - windowClientRect.left;
-	double windowClientRectHeight = (double)windowClientRect.bottom - windowClientRect.top;
-	double nInvalidRectXFactor = pInvalidWindowRect->left / windowClientRectWidth;
-	double nInvalidRectYFactor = pInvalidWindowRect->top / windowClientRectHeight;
-	double nInvalidRectWFactor = ((double)pInvalidWindowRect->right- pInvalidWindowRect->left) / windowClientRectWidth;
-	double nInvalidRectHFactor = ((double)pInvalidWindowRect->bottom- pInvalidWindowRect->top) / windowClientRectHeight;
-	int nCanvasSourceX = (int)(CDG_CANVAS_WIDTH * nScaling * nInvalidRectXFactor) + ((CDG_CANVAS_X + g_nCanvasXOffset) * nScaling);
-	int nCanvasSourceY = (int)(CDG_CANVAS_HEIGHT * nScaling * nInvalidRectYFactor) + ((CDG_CANVAS_Y + g_nCanvasYOffset) * nScaling);
-	int nCanvasWidth = (int)(CDG_CANVAS_WIDTH * nScaling * nInvalidRectWFactor);
-	int nCanvasHeight = (int)(CDG_CANVAS_HEIGHT * nScaling * nInvalidRectHFactor);
-	int nInvalidRectWidth = pInvalidWindowRect->right - pInvalidWindowRect->left;
-	int nInvalidRectHeight = pInvalidWindowRect->bottom - pInvalidWindowRect->top;
-	::FillRect(g_hForegroundWindowDC, pInvalidWindowRect, g_hTransparentBrush);
-	double scaleXMultiplier = windowClientRectWidth / CDG_CANVAS_WIDTH;
-	double scaleYMultiplier = windowClientRectHeight / CDG_CANVAS_HEIGHT;
+	int windowClientRectWidth = windowClientRect.right - windowClientRect.left;
+	int windowClientRectHeight = windowClientRect.bottom - windowClientRect.top;
+	int nCanvasSourceX = (CDG_CANVAS_X + g_nCanvasXOffset) * nScaling;
+	int nCanvasSourceY = (CDG_CANVAS_Y + g_nCanvasYOffset) * nScaling;
+	int nCanvasWidth = CDG_CANVAS_WIDTH * nScaling;
+	int nCanvasHeight = CDG_CANVAS_HEIGHT * nScaling;
+	::FillRect(g_hForegroundWindowDC, &windowClientRect, g_hTransparentBrush);
+	double scaleXMultiplier = windowClientRectWidth / (double)CDG_CANVAS_WIDTH;
+	double scaleYMultiplier = windowClientRectHeight / (double)CDG_CANVAS_HEIGHT;
 	int nScaledXMargin = (int)(g_nMargin * scaleXMultiplier);
 	int nScaledYMargin = (int)(g_nMargin * scaleYMultiplier);
-	::InflateRect(pInvalidWindowRect, -nScaledXMargin, -nScaledYMargin);
-	::StretchBlt(g_hForegroundWindowDC, pInvalidWindowRect->left, pInvalidWindowRect->top, nInvalidRectWidth - (nScaledXMargin << 1), nInvalidRectHeight - (nScaledYMargin << 1), g_hMaskedForegroundDC, nCanvasSourceX, nCanvasSourceY, nCanvasWidth, nCanvasHeight, SRCCOPY);
+	::InflateRect(&windowClientRect, -nScaledXMargin, -nScaledYMargin);
+	windowClientRectWidth = windowClientRect.right - windowClientRect.left;
+	windowClientRectHeight = windowClientRect.bottom - windowClientRect.top;
+	::StretchBlt(g_hForegroundWindowDC, windowClientRect.left,windowClientRect.top,windowClientRectWidth,windowClientRectHeight, g_hMaskedForegroundDC, nCanvasSourceX, nCanvasSourceY, nCanvasWidth, nCanvasHeight, SRCCOPY);
 }
 
