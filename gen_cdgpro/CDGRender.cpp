@@ -15,6 +15,8 @@ using namespace Gdiplus;
 int g_nCanvasXOffset = 0;
 int g_nCanvasYOffset = 0;
 
+HANDLE g_hPaintMutex = ::CreateMutex(NULL, FALSE, NULL);
+
 void Perform2xSmoothing(BYTE* pSourceBitmapBits, BYTE* pDestinationBitmapBits, RECT *pInvalidRect, int nSourceBitmapWidth) {
 	// 2x smoothing
 	static BYTE EAandEB, BAandBB, HAandHB;
@@ -101,7 +103,9 @@ void PaintForegroundBackBuffer() {
 	int nScaledYMargin = (int)(g_nMargin * scaleYMultiplier);
 	::FillRect(g_hForegroundBackBufferDC, &backBufferRect, g_hTransparentBrush);
 	::InflateRect(&backBufferRect, -nScaledXMargin, -nScaledYMargin);
+	::WaitForSingleObject(g_hMaskedForegroundDCAccessMutex, INFINITE);
 	::StretchBlt(g_hForegroundBackBufferDC, backBufferRect.left, backBufferRect.top, backBufferRect.right - backBufferRect.left, backBufferRect.bottom - backBufferRect.top, g_hMaskedForegroundDC, nCanvasSourceX, nCanvasSourceY, nCanvasWidth, nCanvasHeight, SRCCOPY);
+	::ReleaseMutex(g_hMaskedForegroundDCAccessMutex);
 	::ReleaseMutex(g_hForegroundBackBufferDCAccessMutex);
 }
 
@@ -113,28 +117,39 @@ void ScaleRect(RECT* pRect, int nScale) {
 }
 
 void RenderForegroundBackBuffer(RECT* pInvalidCDGRect) {
-	static RECT outlineRect;
+	static RECT invalidRect;
 	HDC hSourceDC = g_hScaledForegroundDCs[g_nSmoothingPasses];
 	int nScaling = 1<<g_nSmoothingPasses;
-	RECT bitmapRect = { 0,0,CDG_BITMAP_WIDTH,CDG_BITMAP_HEIGHT };
+	RECT bitmapRect = { CDG_CANVAS_X,CDG_CANVAS_Y,CDG_CANVAS_X + CDG_CANVAS_WIDTH,CDG_CANVAS_Y + CDG_CANVAS_HEIGHT };
 	if (pInvalidCDGRect)
-		memcpy(&bitmapRect, pInvalidCDGRect,sizeof(RECT));
+		memcpy(&invalidRect, pInvalidCDGRect, sizeof(RECT));
+	else
+		memcpy(&invalidRect, &bitmapRect, sizeof(RECT));
 	ScaleRect(&bitmapRect, nScaling);
-	int invalidCDGRectWidth = bitmapRect.right - bitmapRect.left;
-	int invalidCDGRectHeight = bitmapRect.bottom - bitmapRect.top;
-	::BitBlt(g_hMaskDC, bitmapRect.left, bitmapRect.top, invalidCDGRectWidth, invalidCDGRectHeight, hSourceDC, bitmapRect.left, bitmapRect.top, SRCCOPY);
+	ScaleRect(&invalidRect, nScaling);
+	int invalidCDGRectWidth = invalidRect.right - invalidRect.left;
+	int invalidCDGRectHeight = invalidRect.bottom - invalidRect.top;
+	::BitBlt(g_hMaskDC, invalidRect.left, invalidRect.top, invalidCDGRectWidth, invalidCDGRectHeight, hSourceDC, invalidRect.left, invalidRect.top, SRCCOPY);
 	::ZeroMemory(g_pBorderMaskBitmapBits, (CDG_MAXIMUM_BITMAP_WIDTH * CDG_MAXIMUM_BITMAP_HEIGHT) / 8);
-	// If drawing outlines, we will have to, possibly yet again, inflate the invalid rect to encompass the outline.
-	memcpy(&outlineRect, &bitmapRect, sizeof(RECT));
+	static RECT outlineRect;
+	memcpy(&outlineRect, &invalidRect, sizeof(RECT));
 	if (g_bDrawOutline) {
 		::InflateRect(&outlineRect, nScaling, nScaling);
 		::IntersectRect(&outlineRect, &outlineRect, &bitmapRect);
 	}
+	if (g_nSmoothingPasses) {
+		::InflateRect(&invalidRect, nScaling, nScaling);
+		::IntersectRect(&invalidRect, &invalidRect, &bitmapRect);
+	}
+	invalidCDGRectWidth = invalidRect.right - invalidRect.left;
+	invalidCDGRectHeight = invalidRect.bottom - invalidRect.top;
 	for (int f = -nScaling; f <= nScaling; ++f)
 		for (int g = -nScaling; g <= nScaling; ++g)
 			if (g_bDrawOutline || (!f && !g))
-				::BitBlt(g_hBorderMaskDC, f + outlineRect.left, g + outlineRect.top, outlineRect.right - outlineRect.left, outlineRect.bottom - outlineRect.top, g_hMaskDC, outlineRect.left, outlineRect.top, SRCPAINT);
-	::MaskBlt(g_hMaskedForegroundDC, bitmapRect.left, bitmapRect.top, invalidCDGRectWidth, invalidCDGRectHeight, hSourceDC, bitmapRect.left, bitmapRect.top, g_hBorderMaskBitmap, bitmapRect.left, bitmapRect.top, MAKEROP4(SRCCOPY, PATCOPY));
+				::BitBlt(g_hBorderMaskDC, f + outlineRect.left, g + outlineRect.top, outlineRect.right- outlineRect.left, outlineRect.bottom - outlineRect.top, g_hMaskDC, outlineRect.left, outlineRect.top, SRCPAINT);
+	::WaitForSingleObject(g_hMaskedForegroundDCAccessMutex, INFINITE);
+	::MaskBlt(g_hMaskedForegroundDC, invalidRect.left, invalidRect.top, invalidCDGRectWidth, invalidCDGRectHeight, hSourceDC, invalidRect.left, invalidRect.top, g_hBorderMaskBitmap, invalidRect.left, invalidRect.top, MAKEROP4(SRCCOPY, PATCOPY));
+	::ReleaseMutex(g_hMaskedForegroundDCAccessMutex);
 	PaintForegroundBackBuffer();
 }
 

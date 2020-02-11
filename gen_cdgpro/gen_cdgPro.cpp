@@ -43,8 +43,10 @@ void Stop() {
 	ResetProcessor();
 	ShowWindows(false);
 	::ZeroMemory(g_pScaledForegroundBitmapBits[0], (CDG_BITMAP_WIDTH * CDG_BITMAP_HEIGHT) / 2);
+	::WaitForSingleObject(g_hPaintMutex, INFINITE);
 	::InvalidateRect(g_hForegroundWindow,NULL,FALSE);
 	::InvalidateRect(g_hBackgroundWindow,NULL,FALSE);
+	::ReleaseMutex(g_hPaintMutex);
 }
 
 void StartSong() {

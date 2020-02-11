@@ -161,10 +161,15 @@ DWORD WINAPI CDGProcessor(LPVOID pParams) {
 					if (result & 0x05) {
 						RenderForegroundBackBuffer(&invalidRect);
 						CDGRectToClientRect(&invalidRect);
+						::WaitForSingleObject(g_hPaintMutex,INFINITE);
 						::InvalidateRect(g_hForegroundWindow, &invalidRect,FALSE);
+						::ReleaseMutex(g_hPaintMutex);
 					}
-					if (result & 0x02)
-						::InvalidateRect(g_hBackgroundWindow, NULL,FALSE);
+					if (result & 0x02) {
+						::WaitForSingleObject(g_hPaintMutex, INFINITE);
+						::InvalidateRect(g_hBackgroundWindow, NULL, FALSE);
+						::ReleaseMutex(g_hPaintMutex);
+					}
 				}
 			}
 			else

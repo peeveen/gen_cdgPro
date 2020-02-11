@@ -28,6 +28,7 @@ BYTE* g_pBorderMaskBitmapBits = NULL;
 // The DC containing the masked CDG graphics.
 HDC g_hMaskedForegroundDC = NULL;
 HBITMAP g_hMaskedForegroundBitmap = NULL;
+HANDLE g_hMaskedForegroundDCAccessMutex = NULL;
 
 // This is the "final" display that we copy to the window DC.
 // If we attempt to write to this DC *AND* read from it simultaneously,
@@ -111,8 +112,8 @@ bool CreateScrollBufferDC() {
 }
 
 bool CreateMaskedForegroundDC() {
-	g_hForegroundBackBufferDCAccessMutex = ::CreateMutex(NULL, FALSE, NULL);
-	if (g_hForegroundBackBufferDCAccessMutex) {
+	g_hMaskedForegroundDCAccessMutex = ::CreateMutex(NULL, FALSE, NULL);
+	if (g_hMaskedForegroundDCAccessMutex) {
 		g_hMaskedForegroundDC = ::CreateCompatibleDC(g_hForegroundWindowDC);
 		if (g_hMaskedForegroundDC) {
 			g_hMaskedForegroundBitmap = ::CreateCompatibleBitmap(g_hForegroundWindowDC, CDG_MAXIMUM_BITMAP_WIDTH, CDG_MAXIMUM_BITMAP_HEIGHT);
@@ -127,11 +128,14 @@ bool CreateMaskedForegroundDC() {
 }
 
 bool CreateForegroundBackBufferDC() {
-	g_hForegroundBackBufferDC = ::CreateCompatibleDC(g_hForegroundWindowDC);
-	if (g_hForegroundBackBufferDC) {
-		// No need to create a bitmap here, it will get created every time the window is sized.
-		::SetStretchBltMode(g_hForegroundBackBufferDC, COLORONCOLOR);
-		return true;
+	g_hForegroundBackBufferDCAccessMutex = ::CreateMutex(NULL, FALSE, NULL);
+	if (g_hForegroundBackBufferDCAccessMutex) {
+		g_hForegroundBackBufferDC = ::CreateCompatibleDC(g_hForegroundWindowDC);
+		if (g_hForegroundBackBufferDC) {
+			// No need to create a bitmap here, it will get created every time the window is sized.
+			::SetStretchBltMode(g_hForegroundBackBufferDC, COLORONCOLOR);
+			return true;
+		}
 	}
 	return false;
 }
@@ -261,5 +265,7 @@ void DestroyBitmaps() {
 		::DeleteObject(g_hTransparentBrush);
 	if (g_hForegroundBackBufferDCAccessMutex)
 		::CloseHandle(g_hForegroundBackBufferDCAccessMutex);
+	if (g_hMaskedForegroundDCAccessMutex)
+		::CloseHandle(g_hMaskedForegroundDCAccessMutex);
 	::ReleaseDC(NULL,g_hScreenDC);
 }

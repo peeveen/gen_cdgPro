@@ -33,12 +33,12 @@ BLENDFUNCTION g_blendFn= { AC_SRC_OVER ,0,255,AC_SRC_ALPHA };
 
 void CDGRectToClientRect(RECT* pRect) {
 	static RECT clientRect;
-	::OffsetRect(pRect, -CDG_CANVAS_X, -CDG_CANVAS_Y);
 	::GetClientRect(g_hForegroundWindow, &clientRect);
-	double clientWidth = clientRect.right - clientRect.left;
-	double clientHeight = clientRect.bottom - clientRect.top;
-	double scaleXMultiplier = clientWidth / (double)(CDG_CANVAS_WIDTH + (g_nMargin << 1));
-	double scaleYMultiplier = clientHeight / (double)(CDG_CANVAS_HEIGHT + (g_nMargin << 1));
+	::OffsetRect(pRect, -CDG_CANVAS_X, -CDG_CANVAS_Y);
+	double clientWidth = (double)clientRect.right - clientRect.left;
+	double clientHeight = (double)clientRect.bottom - clientRect.top;
+	double scaleXMultiplier = clientWidth / (double)(CDG_CANVAS_WIDTH + (double)(g_nMargin << 1));
+	double scaleYMultiplier = clientHeight / (double)(CDG_CANVAS_HEIGHT + (double)(g_nMargin << 1));
 	int nScaledXMargin = (int)(g_nMargin * scaleXMultiplier);
 	int nScaledYMargin = (int)(g_nMargin * scaleYMultiplier);
 	clientWidth -= nScaledXMargin * 2.0;
@@ -50,11 +50,12 @@ void CDGRectToClientRect(RECT* pRect) {
 	pRect->top = (int)(pRect->top * scaleYMultiplier);
 	pRect->bottom = (int)(pRect->bottom * scaleYMultiplier);
 	::OffsetRect(pRect, nScaledXMargin, nScaledYMargin);
-	RECT innerCanvasAreaRect = { nScaledXMargin,nScaledYMargin,clientRect.right - nScaledXMargin,clientRect.bottom - nScaledYMargin };
-	int nScaling = 1 << g_nSmoothingPasses;
-	if (g_bDrawOutline)
-		::InflateRect(pRect, nScaling, nScaling);
-	::IntersectRect(pRect, pRect, &innerCanvasAreaRect);
+	::InflateRect(&clientRect, -nScaledXMargin, -nScaledYMargin);
+	if (g_bDrawOutline || g_nSmoothingPasses) {
+		int nScaling = 1 << (g_nSmoothingPasses + (g_bDrawOutline ? 1 : 0));
+		::InflateRect(pRect, (int)(nScaling * scaleXMultiplier), (int)(nScaling * scaleYMultiplier));
+	}
+	::IntersectRect(pRect, pRect, &clientRect);
 }
 
 void UpdateLogoPosition() {
@@ -205,13 +206,17 @@ LRESULT CALLBACK ForegroundWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARA
 	}
 	case WM_CLOSE:
 		return 1;
-	case WM_PAINT:
-		if(g_bDoubleBuffered)
+	case WM_PAINT: {
+		if (g_bDoubleBuffered)
 			::SwapBuffers(g_hForegroundWindowDC);
+		::WaitForSingleObject(g_hPaintMutex, INFINITE);
 		::BeginPaint(g_hForegroundWindow, &ps);
 		PaintForeground(&ps.rcPaint);
 		::EndPaint(g_hForegroundWindow, &ps);
-		break;
+		LRESULT result = DefWindowProc(hwnd, uMsg, wParam, lParam);
+		::ReleaseMutex(g_hPaintMutex);
+		return result;
+		}
 	}
 	return DefWindowProc(hwnd, uMsg, wParam, lParam);
 }
