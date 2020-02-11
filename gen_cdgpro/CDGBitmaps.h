@@ -21,6 +21,7 @@ extern HBITMAP g_hBorderMaskBitmap;
 extern BYTE* g_pBorderMaskBitmapBits;
 
 extern HDC g_hMaskedForegroundDC;
+extern HANDLE g_hMaskedBackgroundDCAccessMutex;
 
 extern HDC g_hBackgroundDC;
 extern unsigned int* g_pBackgroundBitmapBits;

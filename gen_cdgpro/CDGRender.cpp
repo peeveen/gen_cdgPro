@@ -115,7 +115,9 @@ void RefreshScreen(RECT* pInvalidCDGRect) {
 		for (int g = -nScaling; g <= nScaling; ++g)
 			if (g_bDrawOutline || (!f && !g))
 				::BitBlt(g_hBorderMaskDC, f + outlineRect.left, g + outlineRect.top, outlineRect.right - outlineRect.left, outlineRect.bottom - outlineRect.top, g_hMaskDC, outlineRect.left, outlineRect.top, SRCPAINT);
+	::WaitForSingleObject(g_hMaskedBackgroundDCAccessMutex, INFINITE);
 	::MaskBlt(g_hMaskedForegroundDC, pInvalidCDGRect->left, pInvalidCDGRect->top, invalidCDGRectWidth, invalidCDGRectHeight, hSourceDC, pInvalidCDGRect->left, pInvalidCDGRect->top, g_hBorderMaskBitmap, pInvalidCDGRect->left, pInvalidCDGRect->top, MAKEROP4(SRCCOPY, PATCOPY));
+	::ReleaseMutex(g_hMaskedBackgroundDCAccessMutex);
 }
 
 void RedrawForeground(RECT* pInvalidCDGRect) {
@@ -161,6 +163,8 @@ void DrawForeground(RECT* pInvalidWindowRect) {
 	::InflateRect(&windowClientRect, -nScaledXMargin, -nScaledYMargin);
 	windowClientRectWidth = windowClientRect.right - windowClientRect.left;
 	windowClientRectHeight = windowClientRect.bottom - windowClientRect.top;
+	::WaitForSingleObject(g_hMaskedBackgroundDCAccessMutex, INFINITE);
 	::StretchBlt(g_hForegroundWindowDC, windowClientRect.left,windowClientRect.top,windowClientRectWidth,windowClientRectHeight, g_hMaskedForegroundDC, nCanvasSourceX, nCanvasSourceY, nCanvasWidth, nCanvasHeight, SRCCOPY);
+	::ReleaseMutex(g_hMaskedBackgroundDCAccessMutex);
 }
 

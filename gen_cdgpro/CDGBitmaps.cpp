@@ -26,8 +26,14 @@ HBITMAP g_hBorderMaskBitmap = NULL;
 BYTE* g_pBorderMaskBitmapBits = NULL;
 
 // The DC containing the masked CDG graphics.
+// Also, this is the "final" display that we copy to the window DC.
+// If we attempt to write to this DC *AND* read from it simultaneously,
+// we get failures, and missing bits of screen. Therefore, the reading
+// and writing have to happen at different times, so we need a mutex to
+// control that.
 HDC g_hMaskedForegroundDC = NULL;
 HBITMAP g_hMaskedForegroundBitmap = NULL;
+HANDLE g_hMaskedBackgroundDCAccessMutex;
 
 // The DC and bitmap containing the background (usually 1 pixel that we stretch out).
 HDC g_hBackgroundDC = NULL;
@@ -100,13 +106,16 @@ bool CreateScrollBufferDC() {
 }
 
 bool CreateMaskedForegroundDC() {
-	g_hMaskedForegroundDC = ::CreateCompatibleDC(g_hForegroundWindowDC);
-	if (g_hMaskedForegroundDC) {
-		g_hMaskedForegroundBitmap = ::CreateCompatibleBitmap(g_hForegroundWindowDC, CDG_MAXIMUM_BITMAP_WIDTH, CDG_MAXIMUM_BITMAP_HEIGHT);
-		if (g_hMaskedForegroundBitmap) {
-			::SelectObject(g_hMaskedForegroundDC, g_hTransparentBrush);
-			::SelectObject(g_hMaskedForegroundDC, g_hMaskedForegroundBitmap);
-			return true;
+	g_hMaskedBackgroundDCAccessMutex = ::CreateMutex(NULL, FALSE, NULL);
+	if (g_hMaskedBackgroundDCAccessMutex) {
+		g_hMaskedForegroundDC = ::CreateCompatibleDC(g_hForegroundWindowDC);
+		if (g_hMaskedForegroundDC) {
+			g_hMaskedForegroundBitmap = ::CreateCompatibleBitmap(g_hForegroundWindowDC, CDG_MAXIMUM_BITMAP_WIDTH, CDG_MAXIMUM_BITMAP_HEIGHT);
+			if (g_hMaskedForegroundBitmap) {
+				::SelectObject(g_hMaskedForegroundDC, g_hTransparentBrush);
+				::SelectObject(g_hMaskedForegroundDC, g_hMaskedForegroundBitmap);
+				return true;
+			}
 		}
 	}
 	return false;
@@ -208,5 +217,7 @@ void DestroyBitmaps() {
 	DestroyLogo();
 	if (g_hTransparentBrush)
 		::DeleteObject(g_hTransparentBrush);
+	if (g_hMaskedBackgroundDCAccessMutex)
+		::CloseHandle(g_hMaskedBackgroundDCAccessMutex);
 	::ReleaseDC(NULL,g_hScreenDC);
 }
