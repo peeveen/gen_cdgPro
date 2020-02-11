@@ -108,10 +108,8 @@ void RefreshScreen(RECT* pInvalidCDGRect) {
 	// If drawing outlines, we will have to, possibly yet again, inflate the invalid rect to encompass the outline.
 	memcpy(&outlineRect, pInvalidCDGRect, sizeof(RECT));
 	if (g_bDrawOutline) {
-		static RECT tempRect;
 		::InflateRect(&outlineRect, nScaling, nScaling);
-		memcpy(&tempRect, &outlineRect, sizeof(RECT));
-		::IntersectRect(&outlineRect, &tempRect, &bitmapRect);
+		::IntersectRect(&outlineRect, &outlineRect, &bitmapRect);
 	}
 	for (int f = -nScaling; f <= nScaling; ++f)
 		for (int g = -nScaling; g <= nScaling; ++g)
@@ -128,10 +126,8 @@ void RedrawForeground(RECT* pInvalidCDGRect) {
 		// horizontal pixels at a time, and assumes even numbered start/ends ... it would be a more
 		// complex algorithm to cater for odd numbered boundaries for very little increase in speed.
 		// Therefore, we will keep the horizontal offsets even by adding yet ANOTHER pixel.
-		static RECT tempRect;
 		::InflateRect(pInvalidCDGRect, 2, 1);
-		memcpy(&tempRect, pInvalidCDGRect, sizeof(RECT));
-		::IntersectRect(pInvalidCDGRect, &tempRect, &cdgDisplayRect);
+		::IntersectRect(pInvalidCDGRect, pInvalidCDGRect, &cdgDisplayRect);
 	}
 	int nScaling = 1;
 	for (int f = 0; f < g_nSmoothingPasses && f < (SUPPORTED_SCALING_LEVELS - 1); ++f) {

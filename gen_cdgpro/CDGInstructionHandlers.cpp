@@ -71,11 +71,8 @@ BYTE TileBlock(BYTE* pData, bool isXor, RECT *pInvalidRect) {
 	RECT tileRect = { xPixel,yPixel,xPixel + CDG_CELL_WIDTH,yPixel + CDG_CELL_HEIGHT };
 	if (!(pInvalidRect->right))
 		memcpy(pInvalidRect, &tileRect, sizeof(RECT));
-	else {
-		static RECT tempRect;
-		memcpy(&tempRect, pInvalidRect, sizeof(RECT));
-		::UnionRect(pInvalidRect, &tempRect, &tileRect);
-	}
+	else
+		::UnionRect(pInvalidRect, pInvalidRect, &tileRect);
 	int foregroundBitmapOffset = ((xPixel)+(yPixel * CDG_BITMAP_WIDTH)) / 2;
 	BYTE* pForegroundBitmapBits = g_pScaledForegroundBitmapBits[0];
 	// The remaining 12 bytes in the data field will contain the bitmask of pixels to set.
