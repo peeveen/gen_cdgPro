@@ -87,26 +87,45 @@ void DrawBackground() {
 	::StretchBlt(g_hBackgroundWindowDC, 0, 0, r.right - r.left, r.bottom - r.top, g_hBackgroundDC, 0, 0, 1, 1, SRCCOPY);
 }
 
-void DoubleRect(RECT* pRect) {
-	pRect->left <<= 1;
-	pRect->right <<= 1;
-	pRect->top <<= 1;
-	pRect->bottom <<= 1;
+void PaintForegroundBackBuffer() {
+	int nScaling = 1 << g_nSmoothingPasses;
+	int nCanvasSourceX = (CDG_CANVAS_X + g_nCanvasXOffset) * nScaling;
+	int nCanvasSourceY = (CDG_CANVAS_Y + g_nCanvasYOffset) * nScaling;
+	int nCanvasWidth = CDG_CANVAS_WIDTH * nScaling;
+	int nCanvasHeight = CDG_CANVAS_HEIGHT * nScaling;
+	::WaitForSingleObject(g_hForegroundBackBufferDCAccessMutex, INFINITE);
+	RECT backBufferRect = { 0,0,g_nForegroundBackBufferWidth,g_nForegroundBackBufferHeight };
+	double scaleXMultiplier = g_nForegroundBackBufferWidth / (double)CDG_CANVAS_WIDTH;
+	double scaleYMultiplier = g_nForegroundBackBufferHeight / (double)CDG_CANVAS_HEIGHT;
+	int nScaledXMargin = (int)(g_nMargin * scaleXMultiplier);
+	int nScaledYMargin = (int)(g_nMargin * scaleYMultiplier);
+	::FillRect(g_hForegroundBackBufferDC, &backBufferRect, g_hTransparentBrush);
+	::InflateRect(&backBufferRect, -nScaledXMargin, -nScaledYMargin);
+	::StretchBlt(g_hForegroundBackBufferDC, backBufferRect.left, backBufferRect.top, backBufferRect.right - backBufferRect.left, backBufferRect.bottom - backBufferRect.top, g_hMaskedForegroundDC, nCanvasSourceX, nCanvasSourceY, nCanvasWidth, nCanvasHeight, SRCCOPY);
+	::ReleaseMutex(g_hForegroundBackBufferDCAccessMutex);
 }
 
-void RefreshScreen(RECT* pInvalidCDGRect) {
+void ScaleRect(RECT* pRect, int nScale) {
+	pRect->left *= nScale;
+	pRect->right *= nScale;
+	pRect->top *= nScale;
+	pRect->bottom *= nScale;
+}
+
+void RenderForegroundBackBuffer(RECT* pInvalidCDGRect) {
 	static RECT outlineRect;
 	HDC hSourceDC = g_hScaledForegroundDCs[g_nSmoothingPasses];
 	int nScaling = 1<<g_nSmoothingPasses;
-	RECT bitmapRect = { 0,0,CDG_BITMAP_WIDTH * nScaling,CDG_BITMAP_HEIGHT * nScaling };
-	if (!pInvalidCDGRect)
-		pInvalidCDGRect = &bitmapRect;
-	int invalidCDGRectWidth = pInvalidCDGRect->right - pInvalidCDGRect->left;
-	int invalidCDGRectHeight = pInvalidCDGRect->bottom - pInvalidCDGRect->top;
-	::BitBlt(g_hMaskDC, pInvalidCDGRect->left, pInvalidCDGRect->top, invalidCDGRectWidth, invalidCDGRectHeight, hSourceDC, pInvalidCDGRect->left, pInvalidCDGRect->top, SRCCOPY);
+	RECT bitmapRect = { 0,0,CDG_BITMAP_WIDTH,CDG_BITMAP_HEIGHT };
+	if (pInvalidCDGRect)
+		memcpy(&bitmapRect, pInvalidCDGRect,sizeof(RECT));
+	ScaleRect(&bitmapRect, nScaling);
+	int invalidCDGRectWidth = bitmapRect.right - bitmapRect.left;
+	int invalidCDGRectHeight = bitmapRect.bottom - bitmapRect.top;
+	::BitBlt(g_hMaskDC, bitmapRect.left, bitmapRect.top, invalidCDGRectWidth, invalidCDGRectHeight, hSourceDC, bitmapRect.left, bitmapRect.top, SRCCOPY);
 	::ZeroMemory(g_pBorderMaskBitmapBits, (CDG_MAXIMUM_BITMAP_WIDTH * CDG_MAXIMUM_BITMAP_HEIGHT) / 8);
 	// If drawing outlines, we will have to, possibly yet again, inflate the invalid rect to encompass the outline.
-	memcpy(&outlineRect, pInvalidCDGRect, sizeof(RECT));
+	memcpy(&outlineRect, &bitmapRect, sizeof(RECT));
 	if (g_bDrawOutline) {
 		::InflateRect(&outlineRect, nScaling, nScaling);
 		::IntersectRect(&outlineRect, &outlineRect, &bitmapRect);
@@ -115,56 +134,33 @@ void RefreshScreen(RECT* pInvalidCDGRect) {
 		for (int g = -nScaling; g <= nScaling; ++g)
 			if (g_bDrawOutline || (!f && !g))
 				::BitBlt(g_hBorderMaskDC, f + outlineRect.left, g + outlineRect.top, outlineRect.right - outlineRect.left, outlineRect.bottom - outlineRect.top, g_hMaskDC, outlineRect.left, outlineRect.top, SRCPAINT);
-	::WaitForSingleObject(g_hMaskedBackgroundDCAccessMutex, INFINITE);
-	::MaskBlt(g_hMaskedForegroundDC, pInvalidCDGRect->left, pInvalidCDGRect->top, invalidCDGRectWidth, invalidCDGRectHeight, hSourceDC, pInvalidCDGRect->left, pInvalidCDGRect->top, g_hBorderMaskBitmap, pInvalidCDGRect->left, pInvalidCDGRect->top, MAKEROP4(SRCCOPY, PATCOPY));
-	::ReleaseMutex(g_hMaskedBackgroundDCAccessMutex);
+	::MaskBlt(g_hMaskedForegroundDC, bitmapRect.left, bitmapRect.top, invalidCDGRectWidth, invalidCDGRectHeight, hSourceDC, bitmapRect.left, bitmapRect.top, g_hBorderMaskBitmap, bitmapRect.left, bitmapRect.top, MAKEROP4(SRCCOPY, PATCOPY));
+	PaintForegroundBackBuffer();
 }
 
-void RedrawForeground(RECT* pInvalidCDGRect) {
+void DrawForeground(RECT* pInvalidCDGRect) {
 	RECT cdgDisplayRect = { 0,0,CDG_WIDTH,CDG_HEIGHT };
+	static RECT redrawRect;
+	memcpy(&redrawRect, pInvalidCDGRect, sizeof(RECT));
 	if (g_nSmoothingPasses) {
 		// The smoothing algorithms have to operate on adjacent pixels, so we will have to include
 		// an extra pixel on each side of the invalid rectangle. Also, the algorithm works on two
 		// horizontal pixels at a time, and assumes even numbered start/ends ... it would be a more
 		// complex algorithm to cater for odd numbered boundaries for very little increase in speed.
 		// Therefore, we will keep the horizontal offsets even by adding yet ANOTHER pixel.
-		::InflateRect(pInvalidCDGRect, 2, 1);
-		::IntersectRect(pInvalidCDGRect, pInvalidCDGRect, &cdgDisplayRect);
+		::InflateRect(&redrawRect, 2, 1);
+		::IntersectRect(&redrawRect, &redrawRect, &cdgDisplayRect);
 	}
-	int nScaling = 1;
 	for (int f = 0; f < g_nSmoothingPasses && f < (SUPPORTED_SCALING_LEVELS - 1); ++f) {
-		int sourceWidth = CDG_BITMAP_WIDTH * nScaling;
-		Perform2xSmoothing(g_pScaledForegroundBitmapBits[f], g_pScaledForegroundBitmapBits[f + 1], pInvalidCDGRect, sourceWidth);
-		nScaling <<= 1;
-		DoubleRect(pInvalidCDGRect);
-		DoubleRect(&cdgDisplayRect);
+		int sourceWidth = CDG_BITMAP_WIDTH * (1<<f);
+		Perform2xSmoothing(g_pScaledForegroundBitmapBits[f], g_pScaledForegroundBitmapBits[f + 1], &redrawRect, sourceWidth);
+		ScaleRect(&redrawRect,2);
+		ScaleRect(&cdgDisplayRect,2);
 	}
-	RefreshScreen(pInvalidCDGRect);
 }
 
-void DrawForeground() {
-	// Due to the nature of StretchBlt, there is no point getting fancy here and calculating the
-	// exact bit that needs refreshed. It will never look right. We will just blast the entire
-	// bitmap onto the entire window.
-	static RECT windowClientRect;
-	::GetClientRect(g_hForegroundWindow, &windowClientRect);
-	int nScaling = 1 <<g_nSmoothingPasses;
-	int windowClientRectWidth = windowClientRect.right - windowClientRect.left;
-	int windowClientRectHeight = windowClientRect.bottom - windowClientRect.top;
-	int nCanvasSourceX = (CDG_CANVAS_X + g_nCanvasXOffset) * nScaling;
-	int nCanvasSourceY = (CDG_CANVAS_Y + g_nCanvasYOffset) * nScaling;
-	int nCanvasWidth = CDG_CANVAS_WIDTH * nScaling;
-	int nCanvasHeight = CDG_CANVAS_HEIGHT * nScaling;
-	::FillRect(g_hForegroundWindowDC, &windowClientRect, g_hTransparentBrush);
-	double scaleXMultiplier = windowClientRectWidth / (double)CDG_CANVAS_WIDTH;
-	double scaleYMultiplier = windowClientRectHeight / (double)CDG_CANVAS_HEIGHT;
-	int nScaledXMargin = (int)(g_nMargin * scaleXMultiplier);
-	int nScaledYMargin = (int)(g_nMargin * scaleYMultiplier);
-	::InflateRect(&windowClientRect, -nScaledXMargin, -nScaledYMargin);
-	windowClientRectWidth = windowClientRect.right - windowClientRect.left;
-	windowClientRectHeight = windowClientRect.bottom - windowClientRect.top;
-	::WaitForSingleObject(g_hMaskedBackgroundDCAccessMutex, INFINITE);
-	::StretchBlt(g_hForegroundWindowDC, windowClientRect.left,windowClientRect.top,windowClientRectWidth,windowClientRectHeight, g_hMaskedForegroundDC, nCanvasSourceX, nCanvasSourceY, nCanvasWidth, nCanvasHeight, SRCCOPY);
-	::ReleaseMutex(g_hMaskedBackgroundDCAccessMutex);
+void PaintForeground(RECT *pInvalidRect) {
+	::WaitForSingleObject(g_hForegroundBackBufferDCAccessMutex, INFINITE);
+	::BitBlt(g_hForegroundWindowDC, pInvalidRect->left, pInvalidRect->top, pInvalidRect->right - pInvalidRect->left, pInvalidRect->bottom - pInvalidRect->top, g_hForegroundBackBufferDC, pInvalidRect->left, pInvalidRect->top, SRCCOPY);
+	::ReleaseMutex(g_hForegroundBackBufferDCAccessMutex);
 }
-

@@ -43,11 +43,11 @@ void Stop() {
 	ResetProcessor();
 	ShowWindows(false);
 	::ZeroMemory(g_pScaledForegroundBitmapBits[0], (CDG_BITMAP_WIDTH * CDG_BITMAP_HEIGHT) / 2);
-	::RedrawWindow(g_hForegroundWindow, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
-	::RedrawWindow(g_hBackgroundWindow, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
+	::InvalidateRect(g_hForegroundWindow,NULL,FALSE);
+	::InvalidateRect(g_hBackgroundWindow,NULL,FALSE);
 }
 
-DWORD WINAPI StartSongThread(LPVOID pParams) {
+void StartSong() {
 	// By asking for the filename of the currently playing playlist entry, we get
 	// the path to the extracted media content that in_zip created. This saves
 	// us having to unzip it ourselves.
@@ -69,7 +69,6 @@ DWORD WINAPI StartSongThread(LPVOID pParams) {
 		else
 			Stop();
 	}
-	return 0;
 }
 
 LRESULT CALLBACK CdgProWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
@@ -81,8 +80,8 @@ LRESULT CALLBACK CdgProWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lPara
 			// This provides a path to the file being playing, but if it's a zip, that's
 			// what you get: the path to the ZIP. We want the path to the extracted
 			// media file, which is in TEMP somewhere. That's what the various
-			// SendMessage calls in the StartSongThread method do.
-			::CreateThread(NULL, 0, StartSongThread, NULL, 0, NULL);
+			// SendMessage calls in the StartSong method do.
+			StartSong();
 			break;
 		}
 		case IPC_CB_MISC:

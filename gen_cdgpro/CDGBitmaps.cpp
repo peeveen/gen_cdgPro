@@ -26,14 +26,19 @@ HBITMAP g_hBorderMaskBitmap = NULL;
 BYTE* g_pBorderMaskBitmapBits = NULL;
 
 // The DC containing the masked CDG graphics.
-// Also, this is the "final" display that we copy to the window DC.
+HDC g_hMaskedForegroundDC = NULL;
+HBITMAP g_hMaskedForegroundBitmap = NULL;
+
+// This is the "final" display that we copy to the window DC.
 // If we attempt to write to this DC *AND* read from it simultaneously,
 // we get failures, and missing bits of screen. Therefore, the reading
 // and writing have to happen at different times, so we need a mutex to
 // control that.
-HDC g_hMaskedForegroundDC = NULL;
-HBITMAP g_hMaskedForegroundBitmap = NULL;
-HANDLE g_hMaskedBackgroundDCAccessMutex = NULL;
+HDC g_hForegroundBackBufferDC = NULL;
+HBITMAP g_hForegroundBackBufferBitmap = NULL;
+HANDLE g_hForegroundBackBufferDCAccessMutex = NULL;
+int g_nForegroundBackBufferWidth = 0;
+int g_nForegroundBackBufferHeight = 0;
 
 // The DC and bitmap containing the background (usually 1 pixel that we stretch out).
 HDC g_hBackgroundDC = NULL;
@@ -106,8 +111,8 @@ bool CreateScrollBufferDC() {
 }
 
 bool CreateMaskedForegroundDC() {
-	g_hMaskedBackgroundDCAccessMutex = ::CreateMutex(NULL, FALSE, NULL);
-	if (g_hMaskedBackgroundDCAccessMutex) {
+	g_hForegroundBackBufferDCAccessMutex = ::CreateMutex(NULL, FALSE, NULL);
+	if (g_hForegroundBackBufferDCAccessMutex) {
 		g_hMaskedForegroundDC = ::CreateCompatibleDC(g_hForegroundWindowDC);
 		if (g_hMaskedForegroundDC) {
 			g_hMaskedForegroundBitmap = ::CreateCompatibleBitmap(g_hForegroundWindowDC, CDG_MAXIMUM_BITMAP_WIDTH, CDG_MAXIMUM_BITMAP_HEIGHT);
@@ -119,6 +124,37 @@ bool CreateMaskedForegroundDC() {
 		}
 	}
 	return false;
+}
+
+bool CreateForegroundBackBufferDC() {
+	g_hForegroundBackBufferDC = ::CreateCompatibleDC(g_hForegroundWindowDC);
+	if (g_hForegroundBackBufferDC) {
+		// No need to create a bitmap here, it will get created every time the window is sized.
+		::SetStretchBltMode(g_hForegroundBackBufferDC, COLORONCOLOR);
+		return true;
+	}
+	return false;
+}
+
+void ResizeForegroundBackBufferBitmap() {
+	if (!g_hForegroundBackBufferDC)
+		return;
+	static RECT clientRect;
+	::GetClientRect(g_hForegroundWindow, &clientRect);
+	int width = clientRect.right - clientRect.left;
+	int height = clientRect.bottom - clientRect.top;
+	HBITMAP hForegroundBackBufferBitmap = ::CreateCompatibleBitmap(g_hForegroundWindowDC, width, height);
+	if (hForegroundBackBufferBitmap) {
+		::WaitForSingleObject(g_hForegroundBackBufferDCAccessMutex, INFINITE);
+		HGDIOBJ oldBitmap = ::SelectObject(g_hForegroundBackBufferDC, hForegroundBackBufferBitmap);
+		g_nForegroundBackBufferWidth = width;
+		g_nForegroundBackBufferHeight = height;
+		::FillRect(g_hForegroundBackBufferDC, &clientRect, g_hTransparentBrush);
+		::ReleaseMutex(g_hForegroundBackBufferDCAccessMutex);
+		g_hForegroundBackBufferBitmap = hForegroundBackBufferBitmap;
+		if (oldBitmap)
+			::DeleteObject(oldBitmap);
+	}
 }
 
 bool CreateMaskDC() {
@@ -148,9 +184,11 @@ bool CreateBackgroundDC() {
 
 void ClearForegroundBuffer() {
 	RECT r = { 0,0,CDG_MAXIMUM_BITMAP_WIDTH, CDG_MAXIMUM_BITMAP_HEIGHT };
-	::WaitForSingleObject(g_hMaskedBackgroundDCAccessMutex, INFINITE);
 	::FillRect(g_hMaskedForegroundDC, &r, g_hTransparentBrush);
-	::ReleaseMutex(g_hMaskedBackgroundDCAccessMutex);
+	::GetClientRect(g_hForegroundWindow, &r);
+	::WaitForSingleObject(g_hForegroundBackBufferDCAccessMutex, INFINITE);
+	::FillRect(g_hForegroundBackBufferDC, &r, g_hTransparentBrush);
+	::ReleaseMutex(g_hForegroundBackBufferDCAccessMutex);
 }
 
 bool LoadLogo() {
@@ -194,6 +232,7 @@ bool CreateBitmaps() {
 		CreateForegroundDCs() &&
 		CreateMaskDC() &&
 		CreateBorderMaskDC() &&
+		CreateForegroundBackBufferDC() &&
 		CreateScrollBufferDC() &&
 		CreateLogoDC() &&
 		CreateMaskedForegroundDC();
@@ -214,12 +253,13 @@ void DestroyBitmaps() {
 	DeleteDCAndBitmap(g_hScrollBufferDC, g_hScrollBufferBitmap);
 	DeleteDCAndBitmap(g_hLogoDC, g_hLogoBitmap);
 	DeleteDCAndBitmap(g_hBackgroundDC, g_hBackgroundBitmap);
+	DeleteDCAndBitmap(g_hForegroundBackBufferDC, g_hForegroundBackBufferBitmap);
 	for (int f = 0; f < SUPPORTED_SCALING_LEVELS; ++f)
 		DeleteDCAndBitmap(g_hScaledForegroundDCs[f], g_hScaledForegroundBitmaps[f]);
 	DestroyLogo();
 	if (g_hTransparentBrush)
 		::DeleteObject(g_hTransparentBrush);
-	if (g_hMaskedBackgroundDCAccessMutex)
-		::CloseHandle(g_hMaskedBackgroundDCAccessMutex);
+	if (g_hForegroundBackBufferDCAccessMutex)
+		::CloseHandle(g_hForegroundBackBufferDCAccessMutex);
 	::ReleaseDC(NULL,g_hScreenDC);
 }

@@ -31,6 +31,32 @@ SIZE g_logoWindowOffset = { 0,0 };
 // Blend function params for logo.
 BLENDFUNCTION g_blendFn= { AC_SRC_OVER ,0,255,AC_SRC_ALPHA };
 
+void CDGRectToClientRect(RECT* pRect) {
+	static RECT clientRect;
+	::OffsetRect(pRect, -CDG_CANVAS_X, -CDG_CANVAS_Y);
+	::GetClientRect(g_hForegroundWindow, &clientRect);
+	double clientWidth = clientRect.right - clientRect.left;
+	double clientHeight = clientRect.bottom - clientRect.top;
+	double scaleXMultiplier = clientWidth / (double)(CDG_CANVAS_WIDTH + (g_nMargin << 1));
+	double scaleYMultiplier = clientHeight / (double)(CDG_CANVAS_HEIGHT + (g_nMargin << 1));
+	int nScaledXMargin = (int)(g_nMargin * scaleXMultiplier);
+	int nScaledYMargin = (int)(g_nMargin * scaleYMultiplier);
+	clientWidth -= nScaledXMargin * 2.0;
+	clientHeight -= nScaledYMargin * 2.0;
+	scaleXMultiplier = clientWidth / (double)CDG_CANVAS_WIDTH;
+	scaleYMultiplier = clientHeight / (double)CDG_CANVAS_HEIGHT;
+	pRect->left = (int)(pRect->left * scaleXMultiplier);
+	pRect->right = (int)(pRect->right * scaleXMultiplier);
+	pRect->top = (int)(pRect->top * scaleYMultiplier);
+	pRect->bottom = (int)(pRect->bottom * scaleYMultiplier);
+	::OffsetRect(pRect, nScaledXMargin, nScaledYMargin);
+	RECT innerCanvasAreaRect = { nScaledXMargin,nScaledYMargin,clientRect.right - nScaledXMargin,clientRect.bottom - nScaledYMargin };
+	int nScaling = 1 << g_nSmoothingPasses;
+	if (g_bDrawOutline)
+		::InflateRect(pRect, nScaling, nScaling);
+	::IntersectRect(pRect, pRect, &innerCanvasAreaRect);
+}
+
 void UpdateLogoPosition() {
 	::SetWindowPos(g_hForegroundWindow, g_hLogoWindow, 0, 0,0,0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
 	static RECT foregroundClientRect,foregroundWindowRect;
@@ -129,6 +155,7 @@ void SetFullScreen(bool fullscreen)
 
 LRESULT CALLBACK ForegroundWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
+	static PAINTSTRUCT ps;
 	switch (uMsg)
 	{
 	case WM_NCHITTEST: {
@@ -169,6 +196,10 @@ LRESULT CALLBACK ForegroundWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARA
 		int w = (int)(short)LOWORD(lParam);
 		int h = (int)(short)HIWORD(lParam);
 		::SetWindowPos(g_hBackgroundWindow, hwnd, 0, 0, w, h, SWP_NOMOVE | SWP_NOACTIVATE);
+		if (g_hForegroundBackBufferDC) {
+			ResizeForegroundBackBufferBitmap();
+			PaintForegroundBackBuffer();
+		}
 		UpdateLogoPosition();
 		break;
 	}
@@ -177,7 +208,9 @@ LRESULT CALLBACK ForegroundWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARA
 	case WM_PAINT:
 		if(g_bDoubleBuffered)
 			::SwapBuffers(g_hForegroundWindowDC);
-		DrawForeground();
+		::BeginPaint(g_hForegroundWindow, &ps);
+		PaintForeground(&ps.rcPaint);
+		::EndPaint(g_hForegroundWindow, &ps);
 		break;
 	}
 	return DefWindowProc(hwnd, uMsg, wParam, lParam);
@@ -224,6 +257,8 @@ LRESULT CALLBACK LogoWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lPar
 		ShowMenu(xPos, yPos);
 		break;
 	}
+	case WM_CLOSE:
+		return 1;
 	case WM_SHOWWINDOW:
 		if (!wParam)
 			break;
@@ -240,7 +275,7 @@ ATOM RegisterWindowClass(const WCHAR* pszClassName, WNDPROC wndProc) {
 	if (g_hIcon) {
 		WNDCLASSEX wndClass;
 		wndClass.cbSize = sizeof(WNDCLASSEX);
-		wndClass.style = CS_PARENTDC | CS_HREDRAW | CS_VREDRAW;
+		wndClass.style = CS_NOCLOSE | CS_PARENTDC | CS_HREDRAW | CS_VREDRAW;
 		wndClass.lpfnWndProc = (WNDPROC)wndProc;
 		wndClass.cbClsExtra = 0;
 		wndClass.cbWndExtra = 0;

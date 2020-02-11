@@ -10,7 +10,11 @@
 // again before anything else has been drawn, we can ignore it.
 BYTE g_nLastMemoryPresetColor = -1;
 
-BYTE MemoryPreset(BYTE color) {
+void SetFullCanvas(RECT* pRect) {
+	*pRect = { 0,0,CDG_WIDTH,CDG_HEIGHT };
+}
+
+BYTE MemoryPreset(BYTE color,RECT *pInvalidRect) {
 	if (g_nLastMemoryPresetColor == color)
 		return 0x00;
 	BYTE colorByte = (color << 4) | color;
@@ -18,6 +22,8 @@ BYTE MemoryPreset(BYTE color) {
 		memset(g_pScaledForegroundBitmapBits[f], colorByte, ((((CDG_BITMAP_WIDTH >> 1) << f) * (CDG_BITMAP_HEIGHT << f))));
 	g_nLastMemoryPresetColor = color;
 	byte result = 0x04;
+	// Entire screen needs refreshed.
+	SetFullCanvas(pInvalidRect);
 	if (g_nBackgroundDetectionMode == BDM_TOPLEFTPIXEL || g_nBackgroundDetectionMode == BDM_TOPRIGHTPIXEL || g_nBackgroundDetectionMode == BDM_BOTTOMLEFTPIXEL || g_nBackgroundDetectionMode == BDM_BOTTOMRIGHTPIXEL) {
 		// All pixels will be the same value at this point, so use any corner.
 		SetBackgroundColorFromPixel(TOP_LEFT_PIXEL_OFFSET, true);
@@ -26,7 +32,7 @@ BYTE MemoryPreset(BYTE color) {
 	return result;
 }
 
-BYTE BorderPreset(BYTE color) {
+BYTE BorderPreset(BYTE color, RECT* pInvalidRect) {
 	BYTE colorByte = (color << 4) | color;
 	for (int f = 0; f < SUPPORTED_SCALING_LEVELS; ++f) {
 		// Top and bottom edge.
@@ -48,10 +54,12 @@ BYTE BorderPreset(BYTE color) {
 	}
 	// Screen is no longer "blank".
 	g_nLastMemoryPresetColor = -1;
+	// Entire screen needs refreshed.
+	SetFullCanvas(pInvalidRect);
 	return 0x04;
 }
 
-BYTE TileBlock(BYTE* pData, bool isXor, RECT *pInvalidRect) {
+BYTE TileBlock(BYTE* pData, bool isXor, RECT *pRedrawRect) {
 	// 3 byte buffer that we will use to set values in the CDG raster.
 	static BYTE g_blockBuffer[3];
 	BYTE bgColor = pData[0] & 0x0F;
@@ -69,10 +77,10 @@ BYTE TileBlock(BYTE* pData, bool isXor, RECT *pInvalidRect) {
 	int xPixel = col * CDG_CELL_WIDTH;
 	int yPixel = row * CDG_CELL_HEIGHT;
 	RECT tileRect = { xPixel,yPixel,xPixel + CDG_CELL_WIDTH,yPixel + CDG_CELL_HEIGHT };
-	if (!(pInvalidRect->right))
-		memcpy(pInvalidRect, &tileRect, sizeof(RECT));
+	if (!(pRedrawRect->right))
+		memcpy(pRedrawRect, &tileRect, sizeof(RECT));
 	else
-		::UnionRect(pInvalidRect, pInvalidRect, &tileRect);
+		::UnionRect(pRedrawRect, pRedrawRect, &tileRect);
 	int foregroundBitmapOffset = ((xPixel)+(yPixel * CDG_BITMAP_WIDTH)) / 2;
 	BYTE* pForegroundBitmapBits = g_pScaledForegroundBitmapBits[0];
 	// The remaining 12 bytes in the data field will contain the bitmask of pixels to set.
@@ -108,7 +116,7 @@ BYTE TileBlock(BYTE* pData, bool isXor, RECT *pInvalidRect) {
 	return result;
 }
 
-BYTE LoadColorTable(BYTE* pData, bool highTable) {
+BYTE LoadColorTable(BYTE* pData, bool highTable, RECT *pInvalidRect) {
 	int nPaletteStartIndex = highTable ? 8 : 0;
 	RGBQUAD rgbQuads[8];
 	for (int f = 0; f < 8; ++f) {
@@ -125,12 +133,14 @@ BYTE LoadColorTable(BYTE* pData, bool highTable) {
 		rgbQuads[f] = { blue,green,red,0 };
 	}
 	SetPalette(rgbQuads, nPaletteStartIndex, 8);
+	// Entire screen needs refreshed.
+	SetFullCanvas(pInvalidRect);
 	return 0x04 | (g_nCurrentTransparentIndex >= nPaletteStartIndex && g_nCurrentTransparentIndex < nPaletteStartIndex + 8 ? 0x02 : 0x00);
 }
 
-BYTE Scroll(BYTE color, BYTE hScroll, BYTE hScrollOffset, BYTE vScroll, BYTE vScrollOffset, bool copy,RECT *pInvalidRect) {
+BYTE Scroll(BYTE color, BYTE hScroll, BYTE hScrollOffset, BYTE vScroll, BYTE vScrollOffset, bool copy,RECT *pRedrawRect) {
 	// Entire screen needs redrawn after this.
-	*pInvalidRect = { 0,0,CDG_WIDTH,CDG_HEIGHT };
+	SetFullCanvas(pRedrawRect);
 	int nHScrollPixels = ((hScroll == 2 ? -1 : (hScroll == 1 ? 1 : 0)) * CDG_CELL_WIDTH);
 	int nVScrollPixels = ((vScroll == 2 ? -1 : (vScroll == 1 ? 1 : 0)) * CDG_CELL_HEIGHT);
 	g_nCanvasXOffset = hScrollOffset;

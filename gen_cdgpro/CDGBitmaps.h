@@ -10,6 +10,7 @@ using namespace Gdiplus;
 bool CreateBitmaps();
 void DestroyBitmaps();
 void ClearForegroundBuffer();
+void ResizeForegroundBackBufferBitmap();
 
 extern HDC g_hScaledForegroundDCs[];
 extern BYTE* g_pScaledForegroundBitmapBits[];
@@ -21,7 +22,11 @@ extern HBITMAP g_hBorderMaskBitmap;
 extern BYTE* g_pBorderMaskBitmapBits;
 
 extern HDC g_hMaskedForegroundDC;
-extern HANDLE g_hMaskedBackgroundDCAccessMutex;
+
+extern HDC g_hForegroundBackBufferDC;
+extern HANDLE g_hForegroundBackBufferDCAccessMutex;
+extern int g_nForegroundBackBufferWidth;
+extern int g_nForegroundBackBufferHeight;
 
 extern HDC g_hBackgroundDC;
 extern unsigned int* g_pBackgroundBitmapBits;
