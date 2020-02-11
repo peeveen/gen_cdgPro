@@ -142,7 +142,7 @@ void RedrawForeground(RECT* pInvalidCDGRect) {
 	RefreshScreen(pInvalidCDGRect);
 }
 
-void DrawForeground(RECT* pInvalidWindowRect) {
+void DrawForeground() {
 	// Due to the nature of StretchBlt, there is no point getting fancy here and calculating the
 	// exact bit that needs refreshed. It will never look right. We will just blast the entire
 	// bitmap onto the entire window.

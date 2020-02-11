@@ -129,7 +129,6 @@ void SetFullScreen(bool fullscreen)
 
 LRESULT CALLBACK ForegroundWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
-	static PAINTSTRUCT ps;
 	switch (uMsg)
 	{
 	case WM_NCHITTEST: {
@@ -178,9 +177,7 @@ LRESULT CALLBACK ForegroundWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARA
 	case WM_PAINT:
 		if(g_bDoubleBuffered)
 			::SwapBuffers(g_hForegroundWindowDC);
-		::BeginPaint(g_hForegroundWindow, &ps);
-		DrawForeground(&ps.rcPaint);
-		::EndPaint(g_hForegroundWindow, &ps);
+		DrawForeground();
 		break;
 	}
 	return DefWindowProc(hwnd, uMsg, wParam, lParam);

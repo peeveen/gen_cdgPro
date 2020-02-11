@@ -2,7 +2,7 @@
 #include "stdafx.h"
 
 void DrawBackground();
-void DrawForeground(RECT *pInvalidWindowRect);
+void DrawForeground();
 void RefreshScreen(RECT* pInvalidCDGRect);
 void RedrawForeground(RECT* pRedrawRect);
 
