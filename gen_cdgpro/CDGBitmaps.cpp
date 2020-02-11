@@ -33,7 +33,7 @@ BYTE* g_pBorderMaskBitmapBits = NULL;
 // control that.
 HDC g_hMaskedForegroundDC = NULL;
 HBITMAP g_hMaskedForegroundBitmap = NULL;
-HANDLE g_hMaskedBackgroundDCAccessMutex;
+HANDLE g_hMaskedBackgroundDCAccessMutex = NULL;
 
 // The DC and bitmap containing the background (usually 1 pixel that we stretch out).
 HDC g_hBackgroundDC = NULL;
