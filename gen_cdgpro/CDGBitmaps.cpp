@@ -148,7 +148,9 @@ bool CreateBackgroundDC() {
 
 void ClearForegroundBuffer() {
 	RECT r = { 0,0,CDG_MAXIMUM_BITMAP_WIDTH, CDG_MAXIMUM_BITMAP_HEIGHT };
+	::WaitForSingleObject(g_hMaskedBackgroundDCAccessMutex, INFINITE);
 	::FillRect(g_hMaskedForegroundDC, &r, g_hTransparentBrush);
+	::ReleaseMutex(g_hMaskedBackgroundDCAccessMutex);
 }
 
 bool LoadLogo() {
