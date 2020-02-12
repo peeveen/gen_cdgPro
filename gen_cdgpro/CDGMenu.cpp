@@ -1,11 +1,17 @@
 #include "stdafx.h"
 #include <windowsx.h>
 #include "CDGGlobals.h"
+#include "CDGInstructionHandlers.h"
 #include "CDGWindows.h"
 #include "resource.h"
 
 // The context menu
 HMENU g_hMenu = NULL;
+// The channels submenu
+HMENU g_hChannelsMenu = NULL;
+// Checkmark bitmaps.
+HBITMAP g_hChecked = NULL;
+HBITMAP g_hUnchecked = NULL;
 // When displaying the about dialog, we need to cater for the possibility that the main window will be topmost.
 // The dialog proc will need to remove/reset the topmostness.
 bool g_bDialogSetsTopmost = false;
@@ -71,31 +77,54 @@ void ToggleFullScreen() {
 
 void ShowMenu(int xPos,int yPos) {
 	int command = ::TrackPopupMenu(g_hMenu, TPM_RETURNCMD, xPos, yPos, 0, g_hForegroundWindow, NULL);
-	switch (command) {
-		case MENUITEM_TOPMOST_ID:
-			ToggleTopmost();
-			break;
-		case MENUITEM_FULLSCREEN_ID:
-			ToggleFullScreen();
-			break;
-		case MENUITEM_ABOUT_ID:
-			ShowAboutDialog();
-		default:
-			break;
+	if (command >= MENUITEM_CHANNEL && command <= MENUITEM_CHANNEL + 16) {
+		int channel = command - MENUITEM_CHANNEL;
+		unsigned short nChannelBit = 1 << channel;
+		g_nChannelMask ^= nChannelBit;
+		SetMenuItemCheckmark(command, g_nChannelMask & nChannelBit);
 	}
+	else
+		switch (command) {
+			case MENUITEM_TOPMOST_ID:
+				ToggleTopmost();
+				break;
+			case MENUITEM_FULLSCREEN_ID:
+				ToggleFullScreen();
+				break;
+			case MENUITEM_ABOUT_ID:
+				ShowAboutDialog();
+			default:
+				break;
+		}
 }
 
 bool CreateRightClickMenu() {
-	g_hMenu = ::CreatePopupMenu();
-	if (g_hMenu) {
-		HBITMAP checked = (HBITMAP)::LoadImage(g_hInstance, MAKEINTRESOURCE(IDB_CHECKED), IMAGE_BITMAP, 16, 16, LR_MONOCHROME | LR_LOADTRANSPARENT);
-		HBITMAP unchecked = (HBITMAP)::LoadImage(g_hInstance, MAKEINTRESOURCE(IDB_UNCHECKED), IMAGE_BITMAP, 16, 16, LR_MONOCHROME | LR_LOADTRANSPARENT);
-		::SetMenuItemBitmaps(g_hMenu, MENUITEM_TOPMOST_ID, MF_BYCOMMAND, unchecked, checked);
-		::AppendMenu(g_hMenu, MF_UNCHECKED | MF_ENABLED | MF_STRING, MENUITEM_TOPMOST_ID, L"Always On Top");
-		::AppendMenu(g_hMenu, MF_UNCHECKED | MF_ENABLED | MF_STRING, MENUITEM_FULLSCREEN_ID, L"Full Screen");
-		::AppendMenu(g_hMenu, MF_SEPARATOR, 0, NULL);
-		::AppendMenu(g_hMenu, MF_ENABLED | MF_STRING, MENUITEM_ABOUT_ID, L"About");
-		return true;
+	g_hChecked = (HBITMAP)::LoadImage(g_hInstance, MAKEINTRESOURCE(IDB_CHECKED), IMAGE_BITMAP, 16, 16, LR_MONOCHROME | LR_LOADTRANSPARENT);
+	if (g_hChecked) {
+		g_hUnchecked = (HBITMAP)::LoadImage(g_hInstance, MAKEINTRESOURCE(IDB_UNCHECKED), IMAGE_BITMAP, 16, 16, LR_MONOCHROME | LR_LOADTRANSPARENT);
+		if (g_hUnchecked) {
+			g_hChannelsMenu = ::CreatePopupMenu();
+			if (g_hChannelsMenu) {
+				WCHAR szChannel[24];
+				for (int f = 0; f < 16; ++f) {
+					wsprintf(szChannel, L"Channel %d", f);
+					::AppendMenu(g_hChannelsMenu, ((g_nChannelMask & (1 << f)) ? MF_CHECKED : MF_UNCHECKED) | MF_ENABLED | MF_STRING, MENUITEM_CHANNEL + f, szChannel);
+					::SetMenuItemBitmaps(g_hChannelsMenu, MENUITEM_CHANNEL+f, MF_BYCOMMAND, g_hUnchecked, g_hChecked);
+				}
+				g_hMenu = ::CreatePopupMenu();
+				if (g_hMenu) {
+					::SetMenuItemBitmaps(g_hMenu, MENUITEM_TOPMOST_ID, MF_BYCOMMAND, g_hUnchecked, g_hChecked);
+					::SetMenuItemBitmaps(g_hMenu, MENUITEM_FULLSCREEN_ID, MF_BYCOMMAND, g_hUnchecked, g_hChecked);
+					::AppendMenu(g_hMenu, MF_UNCHECKED | MF_ENABLED | MF_STRING, MENUITEM_TOPMOST_ID, L"Always On Top");
+					::AppendMenu(g_hMenu, MF_UNCHECKED | MF_ENABLED | MF_STRING, MENUITEM_FULLSCREEN_ID, L"Full Screen");
+					::AppendMenu(g_hMenu, MF_SEPARATOR, 0, NULL);
+					::AppendMenu(g_hMenu, MF_ENABLED | MF_STRING|MF_POPUP, (UINT_PTR)g_hChannelsMenu, L"Channels");
+					::AppendMenu(g_hMenu, MF_SEPARATOR, 0, NULL);
+					::AppendMenu(g_hMenu, MF_ENABLED | MF_STRING, MENUITEM_ABOUT_ID, L"About");
+					return true;
+				}
+			}
+		}
 	}
 	return false;
 }
@@ -103,4 +132,10 @@ bool CreateRightClickMenu() {
 void DestroyRightClickMenu() {
 	if (g_hMenu)
 		::DestroyMenu(g_hMenu);
+	if (g_hChannelsMenu)
+		::DestroyMenu(g_hChannelsMenu);
+	if (g_hChecked)
+		::DeleteObject(g_hChecked);
+	if (g_hUnchecked)
+		::DeleteObject(g_hUnchecked);
 }

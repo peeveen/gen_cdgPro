@@ -109,6 +109,7 @@ typedef struct {
 #define MENUITEM_TOPMOST_ID (1)
 #define MENUITEM_FULLSCREEN_ID (2)
 #define MENUITEM_ABOUT_ID (3)
+#define MENUITEM_CHANNEL (100)
 
 // The CDG data packet structure.
 struct CDGPacket {
