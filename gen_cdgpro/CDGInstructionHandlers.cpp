@@ -9,6 +9,8 @@
 // We keep track of the last "reset" color. If we receive a MemoryPreset command for this color
 // again before anything else has been drawn, we can ignore it.
 BYTE g_nLastMemoryPresetColor = -1;
+// Channel mask. By default, channels 0 and 4 are shown.
+unsigned short g_nChannelMask = 0b0000000000010001;
 
 void SetFullCanvas(RECT* pRect) {
 	*pRect = { 0,0,CDG_WIDTH,CDG_HEIGHT };
@@ -62,57 +64,59 @@ BYTE BorderPreset(BYTE color, RECT* pInvalidRect) {
 BYTE TileBlock(BYTE* pData, bool isXor, RECT *pRedrawRect) {
 	// 3 byte buffer that we will use to set values in the CDG raster.
 	static BYTE g_blockBuffer[3];
-	BYTE bgColor = pData[0] & 0x0F;
-	BYTE fgColor = pData[1] & 0x0F;
-	// Python CDG parser code suggests this bit means "ignore this command"?
-	//if (pData[1] & 0x20)
-	//	return;
-	BYTE row = pData[2] & 0x3F;
-	BYTE col = pData[3] & 0x3F;
-	// If the coordinates are offscreen, reject them as bad data.
-	if (col >= CDG_WIDTH_CELLS || row >= CDG_HEIGHT_CELLS)
-		return 0x00;
-	BYTE upperFgColor = fgColor << 4;
-	BYTE upperBgColor = bgColor << 4;
-	int xPixel = col * CDG_CELL_WIDTH;
-	int yPixel = row * CDG_CELL_HEIGHT;
-	RECT tileRect = { xPixel,yPixel,xPixel + CDG_CELL_WIDTH,yPixel + CDG_CELL_HEIGHT };
-	if (!(pRedrawRect->right))
-		memcpy(pRedrawRect, &tileRect, sizeof(RECT));
-	else
-		::UnionRect(pRedrawRect, pRedrawRect, &tileRect);
-	int foregroundBitmapOffset = ((xPixel)+(yPixel * CDG_BITMAP_WIDTH)) / 2;
-	BYTE* pForegroundBitmapBits = g_pScaledForegroundBitmapBits[0];
-	// The remaining 12 bytes in the data field will contain the bitmask of pixels to set.
-	// The lower six bits of each byte are the pixel mask.
-	for (int f = 0; f < 12; ++f) {
-		BYTE bits = pData[f + 4];
-		g_blockBuffer[0] = ((bits & 0x20) ? upperFgColor : upperBgColor) | ((bits & 0x10) ? fgColor : bgColor);
-		g_blockBuffer[1] = ((bits & 0x08) ? upperFgColor : upperBgColor) | ((bits & 0x04) ? fgColor : bgColor);
-		g_blockBuffer[2] = ((bits & 0x02) ? upperFgColor : upperBgColor) | ((bits & 0x01) ? fgColor : bgColor);
-		if (isXor) {
-			pForegroundBitmapBits[foregroundBitmapOffset] ^= g_blockBuffer[0];
-			pForegroundBitmapBits[foregroundBitmapOffset + 1] ^= g_blockBuffer[1];
-			pForegroundBitmapBits[foregroundBitmapOffset + 2] ^= g_blockBuffer[2];
+	BYTE channel = ((pData[0] & 0x30)>>4) | ((pData[1] & 0x30)>>2);
+	unsigned short channelBit = 1 << channel;
+	BYTE result = 0x00;
+	if (g_nChannelMask & channelBit) {
+		BYTE bgColor = pData[0] & 0x0F;
+		BYTE fgColor = pData[1] & 0x0F;
+		BYTE row = pData[2] & 0x3F;
+		BYTE col = pData[3] & 0x3F;
+		// If the coordinates are offscreen, reject them as bad data.
+		if (col >= CDG_WIDTH_CELLS || row >= CDG_HEIGHT_CELLS)
+			return 0x00;
+		BYTE upperFgColor = fgColor << 4;
+		BYTE upperBgColor = bgColor << 4;
+		int xPixel = col * CDG_CELL_WIDTH;
+		int yPixel = row * CDG_CELL_HEIGHT;
+		RECT tileRect = { xPixel,yPixel,xPixel + CDG_CELL_WIDTH,yPixel + CDG_CELL_HEIGHT };
+		if (!(pRedrawRect->right))
+			memcpy(pRedrawRect, &tileRect, sizeof(RECT));
+		else
+			::UnionRect(pRedrawRect, pRedrawRect, &tileRect);
+		int foregroundBitmapOffset = ((xPixel)+(yPixel * CDG_BITMAP_WIDTH)) / 2;
+		BYTE* pForegroundBitmapBits = g_pScaledForegroundBitmapBits[0];
+		// The remaining 12 bytes in the data field will contain the bitmask of pixels to set.
+		// The lower six bits of each byte are the pixel mask.
+		for (int f = 0; f < 12; ++f) {
+			BYTE bits = pData[f + 4];
+			g_blockBuffer[0] = ((bits & 0x20) ? upperFgColor : upperBgColor) | ((bits & 0x10) ? fgColor : bgColor);
+			g_blockBuffer[1] = ((bits & 0x08) ? upperFgColor : upperBgColor) | ((bits & 0x04) ? fgColor : bgColor);
+			g_blockBuffer[2] = ((bits & 0x02) ? upperFgColor : upperBgColor) | ((bits & 0x01) ? fgColor : bgColor);
+			if (isXor) {
+				pForegroundBitmapBits[foregroundBitmapOffset] ^= g_blockBuffer[0];
+				pForegroundBitmapBits[foregroundBitmapOffset + 1] ^= g_blockBuffer[1];
+				pForegroundBitmapBits[foregroundBitmapOffset + 2] ^= g_blockBuffer[2];
+			}
+			else {
+				pForegroundBitmapBits[foregroundBitmapOffset] = g_blockBuffer[0];
+				pForegroundBitmapBits[foregroundBitmapOffset + 1] = g_blockBuffer[1];
+				pForegroundBitmapBits[foregroundBitmapOffset + 2] = g_blockBuffer[2];
+			}
+			foregroundBitmapOffset += (CDG_BITMAP_WIDTH / 2);
 		}
-		else {
-			pForegroundBitmapBits[foregroundBitmapOffset] = g_blockBuffer[0];
-			pForegroundBitmapBits[foregroundBitmapOffset + 1] = g_blockBuffer[1];
-			pForegroundBitmapBits[foregroundBitmapOffset + 2] = g_blockBuffer[2];
-		}
-		foregroundBitmapOffset += (CDG_BITMAP_WIDTH / 2);
+		result = 0x01;
+		// Also need to know if the background needs refreshed.
+		bool topLeftPixelSet = col == 1 && row == 1;
+		bool topRightPixelSet = col == CDG_WIDTH_CELLS - 2 && row == 1;
+		bool bottomLeftPixelSet = col == 1 && row == CDG_HEIGHT_CELLS - 2;
+		bool bottomRightPixelSet = col == CDG_WIDTH_CELLS - 2 && row == CDG_HEIGHT_CELLS - 2;
+		if (topLeftPixelSet || topRightPixelSet || bottomLeftPixelSet || bottomRightPixelSet)
+			if (CheckPixelColorBackgroundChange(topLeftPixelSet, topRightPixelSet, bottomLeftPixelSet, bottomRightPixelSet))
+				result |= 0x02;
+		// Screen is no longer blank.
+		g_nLastMemoryPresetColor = -1;
 	}
-	BYTE result = 0x01;
-	// Also need to know if the background needs refreshed.
-	bool topLeftPixelSet = col == 1 && row == 1;
-	bool topRightPixelSet = col == CDG_WIDTH_CELLS - 2 && row == 1;
-	bool bottomLeftPixelSet = col == 1 && row == CDG_HEIGHT_CELLS - 2;
-	bool bottomRightPixelSet = col == CDG_WIDTH_CELLS - 2 && row == CDG_HEIGHT_CELLS - 2;
-	if (topLeftPixelSet || topRightPixelSet || bottomLeftPixelSet || bottomRightPixelSet)
-		if (CheckPixelColorBackgroundChange(topLeftPixelSet, topRightPixelSet, bottomLeftPixelSet, bottomRightPixelSet))
-			result |= 0x02;
-	// Screen is no longer blank.
-	g_nLastMemoryPresetColor = -1;
 	return result;
 }
 
