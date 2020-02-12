@@ -9,5 +9,3 @@ void PaintForegroundBackBuffer();
 
 extern int g_nCanvasXOffset;
 extern int g_nCanvasYOffset;
-
-extern HANDLE g_hPaintMutex;

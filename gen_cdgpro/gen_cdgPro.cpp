@@ -26,6 +26,9 @@ HINSTANCE g_hInstance = NULL;
 // Handle to the Winamp window.
 HWND g_hWinampWindow = NULL;
 
+// Mutex to prevent window areas being validated & invalidated at the same time.
+HANDLE g_hPaintMutex = NULL;
+
 // Original WndProc that we have to swap back in at the end of proceedings.
 WNDPROC g_pOriginalWndProc;
 // This structure contains plugin information, version, name...
@@ -104,6 +107,7 @@ int init() {
 	g_hInstance = plugin.hDllInstance;
 	g_hWinampWindow = plugin.hwndParent;
 	g_pOriginalWndProc = (WNDPROC)::SetWindowLong(plugin.hwndParent, GWL_WNDPROC, (LONG)CdgProWndProc);
+	g_hPaintMutex = ::CreateMutex(NULL, FALSE, NULL);
 
 	ReadPrefs();
 
@@ -129,6 +133,10 @@ void quit() {
 	DestroyRightClickMenu();
 	StopCDGProcessor();
 	DestroyBitmaps();
+	if (g_hPaintMutex)
+		::CloseHandle(g_hPaintMutex);
+
 	::GdiplusShutdown(g_gdiPlusToken);
+
 	::SetWindowLong(plugin.hwndParent, GWL_WNDPROC, (LONG)g_pOriginalWndProc);
 }

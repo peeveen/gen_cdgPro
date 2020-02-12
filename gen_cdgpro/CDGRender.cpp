@@ -15,8 +15,6 @@ using namespace Gdiplus;
 int g_nCanvasXOffset = 0;
 int g_nCanvasYOffset = 0;
 
-HANDLE g_hPaintMutex = ::CreateMutex(NULL, FALSE, NULL);
-
 void Perform2xSmoothing(BYTE* pSourceBitmapBits, BYTE* pDestinationBitmapBits, RECT *pInvalidRect, int nSourceBitmapWidth) {
 	// 2x smoothing
 	static BYTE EAandEB, BAandBB, HAandHB;

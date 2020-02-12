@@ -7,3 +7,5 @@ using namespace Gdiplus;
 extern HINSTANCE g_hInstance;
 
 extern HWND g_hWinampWindow;
+
+extern HANDLE g_hPaintMutex;
