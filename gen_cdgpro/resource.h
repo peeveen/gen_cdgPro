@@ -3,8 +3,6 @@
 // Used by gen_cdgpro.rc
 //
 #define IDI_APPICON                     101
-#define IDB_CHECKED                     102
-#define IDB_UNCHECKED                   103
 #define IDD_ABOUTDIALOG                 104
 
 // Next default values for new objects

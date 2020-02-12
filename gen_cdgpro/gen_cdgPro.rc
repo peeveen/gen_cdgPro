@@ -60,10 +60,6 @@ IDI_APPICON             ICON                    "winampIcon.ico"
 // Bitmap
 //
 
-IDB_CHECKED             BITMAP                  "checked.bmp"
-
-IDB_UNCHECKED           BITMAP                  "unchecked.bmp"
-
 
 /////////////////////////////////////////////////////////////////////////////
 //

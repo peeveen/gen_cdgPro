@@ -197,8 +197,6 @@
     <ResourceCompile Include="gen_cdgpro.rc" />
   </ItemGroup>
   <ItemGroup>
-    <Image Include="checked.bmp" />
-    <Image Include="unchecked.bmp" />
     <Image Include="winampIcon.ico" />
   </ItemGroup>
   <ItemGroup>
