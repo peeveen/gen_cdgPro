@@ -131,7 +131,8 @@ void RenderForegroundBackBuffer(RECT* pInvalidCDGRect) {
 	static RECT outlineRect;
 	memcpy(&outlineRect, &invalidRect, sizeof(RECT));
 	if (g_bDrawOutline) {
-		::InflateRect(&outlineRect, nScaling, nScaling);
+		// The outline is twice as thick as the scaling value (outline covers all directions)
+		::InflateRect(&outlineRect, nScaling<<1, nScaling<<1);
 		::IntersectRect(&outlineRect, &outlineRect, &bitmapRect);
 	}
 	if (g_nSmoothingPasses) {

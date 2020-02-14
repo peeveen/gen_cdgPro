@@ -101,6 +101,7 @@ void ShowWindows(bool bSongPlaying) {
 		// The foreground window should now be the app window.
 		exStyle |= WS_EX_APPWINDOW;
 		::SetWindowLong(g_hForegroundWindow, GWL_EXSTYLE, exStyle);
+		::SetWindowPos(g_hForegroundWindow, 0, 0, 0, 0, 0, SWP_NOZORDER | SWP_NOSIZE | SWP_NOMOVE);
 	}
 	else {
 		if (g_pLogoImage) {
