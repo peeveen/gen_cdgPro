@@ -3,7 +3,6 @@
 #include <malloc.h>
 #include <objidl.h>
 #include <gdiplus.h>
-#pragma comment (lib,"Gdiplus.lib")
 using namespace Gdiplus;
 #include "resource.h"
 
@@ -104,15 +103,15 @@ LRESULT CALLBACK CdgProWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lPara
 }
 
 int init() {
+	GdiplusStartupInput g_gdiPlusStartupInput;
+	::GdiplusStartup(&g_gdiPlusToken, &g_gdiPlusStartupInput, NULL);
+
 	g_hInstance = plugin.hDllInstance;
 	g_hWinampWindow = plugin.hwndParent;
 	g_pOriginalWndProc = (WNDPROC)::SetWindowLong(plugin.hwndParent, GWL_WNDPROC, (LONG)CdgProWndProc);
 	g_hPaintMutex = ::CreateMutex(NULL, FALSE, NULL);
 
 	ReadPrefs();
-
-	GdiplusStartupInput g_gdiPlusStartupInput;
-	::GdiplusStartup(&g_gdiPlusToken, &g_gdiPlusStartupInput, NULL);
 
 	CreateRightClickMenu();
 	CreateWindows();

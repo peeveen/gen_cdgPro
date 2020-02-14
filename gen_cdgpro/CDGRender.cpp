@@ -8,7 +8,6 @@
 #include <stdlib.h>
 #include <gdiplus.h>
 #include <gdipluscolor.h>
-#pragma comment (lib,"Gdiplus.lib")
 using namespace Gdiplus;
 
 // Canvas pixel offsets for scrolling

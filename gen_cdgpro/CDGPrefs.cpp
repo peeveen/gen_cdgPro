@@ -44,7 +44,10 @@ void SetPref(WCHAR* pszPrefLine, const WCHAR* pszPrefName, void* pDestVal, void 
 		while (wcslen(pszPrefLine) && pszPrefLine[0] == '=')
 			++pszPrefLine;
 		TrimLeading(pszPrefLine);
-		if(wcslen(pszPrefLine))
+		WCHAR* pszNewLine = wcsrchr(pszPrefLine, '\n');
+		if (pszNewLine)
+			*pszNewLine = '\0';
+		if (wcslen(pszPrefLine))
 			pFunc(pszPrefLine, pDestVal);
 	}
 }
@@ -54,7 +57,7 @@ void SetBoolValue(const WCHAR* pszPrefValue, void* pbDestVal) {
 }
 
 void SetStringValue(const WCHAR* pszPrefValue, void* pszDestVal) {
-	wcscpy_s((WCHAR *)pszDestVal, PREF_BUFFER_SIZE,pszPrefValue);
+		wcscpy_s((WCHAR *)pszDestVal, PREF_BUFFER_SIZE,pszPrefValue);
 }
 
 void SetIntValueRadix(const WCHAR *pszPrefValue, int* pnDestVal, int radix) {
