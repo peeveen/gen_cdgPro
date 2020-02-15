@@ -95,20 +95,25 @@ void ShowWindows(bool bSongPlaying) {
 	//		If there is NOT a logo, hide all windows.
 	DWORD exStyle = ::GetWindowLong(g_hForegroundWindow, GWL_EXSTYLE);
 	if (bSongPlaying) {
+		// The foreground window should now be the app window. You can't change this while it's visible,
+		// so temporarily make it invisible.
+		::ShowWindow(g_hForegroundWindow, SW_HIDE);
+		exStyle |= WS_EX_APPWINDOW;
+		exStyle &= ~WS_EX_NOACTIVATE;
+		::SetWindowLong(g_hForegroundWindow, GWL_EXSTYLE, exStyle);
+		// Now show the windows we want.
 		::ShowWindow(g_hLogoWindow, SW_HIDE);
 		::ShowWindow(g_hBackgroundWindow, SW_SHOW);
 		::ShowWindow(g_hForegroundWindow, SW_SHOW);
-		// The foreground window should now be the app window.
-		exStyle |= WS_EX_APPWINDOW;
-		::SetWindowLong(g_hForegroundWindow, GWL_EXSTYLE, exStyle);
-		::SetWindowPos(g_hForegroundWindow, 0, 0, 0, 0, 0, SWP_NOZORDER | SWP_NOSIZE | SWP_NOMOVE);
 	}
 	else {
 		if (g_pLogoImage) {
 			// If the IS a logo, then we want the logo to be the "app window", so
 			// that's what appears in the alt-tab menu, etc. For that to happen,
 			// we have to remove that flag from the foreground window.
+			::ShowWindow(g_hForegroundWindow, SW_HIDE);
 			exStyle &= ~WS_EX_APPWINDOW;
+			exStyle |= WS_EX_NOACTIVATE;
 			::SetWindowLong(g_hForegroundWindow, GWL_EXSTYLE, exStyle);
 			::ShowWindow(g_hBackgroundWindow, SW_SHOW);
 			::ShowWindow(g_hForegroundWindow, SW_SHOW);
@@ -309,7 +314,7 @@ ATOM RegisterLogoWindowClass() {
 	return RegisterWindowClass(g_logoWindowClassName, (WNDPROC)LogoWindowProc);
 }
 
-bool CreateCDGWindow(HWND* phWnd, HDC* phDC, const WCHAR* pszClassName, DWORD styles, DWORD additionalExStyles) {
+bool CreateCDGWindow(HWND* phWnd, HDC* phDC, const WCHAR* pszClassName, DWORD styles, DWORD additionalExStyles=0) {
 	int width = CDG_CANVAS_WIDTH + (g_nMargin << 1);
 	int height = CDG_CANVAS_HEIGHT + (g_nMargin << 1);
 	*phWnd = CreateWindowEx(
