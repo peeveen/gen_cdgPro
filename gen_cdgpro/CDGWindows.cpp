@@ -285,18 +285,13 @@ ATOM RegisterWindowClass(const WCHAR* pszClassName, WNDPROC wndProc) {
 		g_hIcon = ::LoadIcon(g_hInstance, MAKEINTRESOURCE(IDI_APPICON));
 	if (g_hIcon) {
 		WNDCLASSEX wndClass;
+		::ZeroMemory(&wndClass, sizeof(WNDCLASSEX));
 		wndClass.cbSize = sizeof(WNDCLASSEX);
 		wndClass.style = CS_NOCLOSE | CS_PARENTDC | CS_HREDRAW | CS_VREDRAW;
 		wndClass.lpfnWndProc = (WNDPROC)wndProc;
-		wndClass.cbClsExtra = 0;
-		wndClass.cbWndExtra = 0;
 		wndClass.hInstance = g_hInstance;
-		wndClass.hIcon = g_hIcon;
-		wndClass.hCursor = LoadCursor(NULL, (LPTSTR)IDC_ARROW);
-		wndClass.hbrBackground = NULL;
-		wndClass.lpszMenuName = NULL;
+		wndClass.hIcon = wndClass.hIconSm = g_hIcon;
 		wndClass.lpszClassName = pszClassName;
-		wndClass.hIconSm = g_hIcon;
 		return ::RegisterClassEx(&wndClass);
 	}
 	return 0;
