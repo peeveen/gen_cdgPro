@@ -136,7 +136,7 @@ bool SetINIPath() {
 bool ReadPrefs() {
 	if(SetINIPath()){
 		FILE* pFile = NULL;
-		errno_t error=_wfopen_s(&pFile,g_szINIPath, L"rt");
+		errno_t error=_wfopen_s(&pFile,g_szINIPath, L"rt, ccs=UTF-8");
 		if (pFile && !error) {
 			WCHAR szBuffer[PREF_BUFFER_SIZE];
 			while (fgetws(szBuffer, PREF_BUFFER_SIZE, pFile)) {
