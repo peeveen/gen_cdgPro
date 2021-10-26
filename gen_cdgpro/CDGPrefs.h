@@ -8,6 +8,8 @@
 #define BDM_BOTTOMLEFTPIXEL 3
 #define BDM_BOTTOMRIGHTPIXEL 4
 
+// Functions relating to the reading/parsing of the basic prefs INI file.
+
 bool ReadPrefs();
 
 extern WCHAR g_szINIPath[];

@@ -1,6 +1,8 @@
 #pragma once
 #include "stdafx.h"
 
+// Functions relating to the creation/cleanup of windows.
+
 void SetFullScreen(bool fullScreen);
 bool CreateWindows();
 void DestroyWindows();

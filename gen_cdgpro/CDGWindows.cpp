@@ -37,8 +37,8 @@ void CDGRectToClientRect(RECT* pRect) {
 	::OffsetRect(pRect, -CDG_CANVAS_X, -CDG_CANVAS_Y);
 	double clientWidth = (double)clientRect.right - clientRect.left;
 	double clientHeight = (double)clientRect.bottom - clientRect.top;
-	double scaleXMultiplier = clientWidth / (double)(CDG_CANVAS_WIDTH + (double)(g_nMargin << 1));
-	double scaleYMultiplier = clientHeight / (double)(CDG_CANVAS_HEIGHT + (double)(g_nMargin << 1));
+	double scaleXMultiplier = clientWidth / (double)(CDG_CANVAS_WIDTH + (double)((long long)g_nMargin << 1));
+	double scaleYMultiplier = clientHeight / (double)(CDG_CANVAS_HEIGHT + (double)((long long)g_nMargin << 1));
 	int nScaledXMargin = (int)(g_nMargin * scaleXMultiplier);
 	int nScaledYMargin = (int)(g_nMargin * scaleYMultiplier);
 	clientWidth -= nScaledXMargin * 2.0;

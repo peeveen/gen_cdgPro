@@ -1,6 +1,8 @@
 #pragma once
 #include "stdafx.h"
 
+// Functions relating to the rendering of the CDG buffer onto the screen.
+
 void DrawBackground();
 void DrawForeground(RECT* pRedrawRect);
 void PaintForeground(RECT *pInvalidRect);

@@ -63,8 +63,8 @@ bool ReadCDGData(const WCHAR* pFileBeingPlayed) {
 	return result;
 }
 
-BYTE ProcessCDGPackets(long songPosition,RECT *pRedrawRect,RECT *pInvalidRect) {
-	BYTE result = 0;
+CDG_REFRESH_FLAGS ProcessCDGPackets(long songPosition,RECT *pRedrawRect,RECT *pInvalidRect) {
+	CDG_REFRESH_FLAGS result = CDG_REFRESH_NONE;
 	HANDLE waitHandles[] = { g_hStopCDGProcessingEvent, g_hStopCDGThreadEvent };
 	// Get current song position in milliseconds (see comment about rewind tolerance).
 	if (songPosition>=0) {
@@ -144,13 +144,13 @@ DWORD WINAPI CDGProcessor(LPVOID pParams) {
 				::ZeroMemory(&invalidRect, sizeof(RECT));
 				::ZeroMemory(&redrawRect, sizeof(RECT));
 				if (g_nCDGPC < g_nCDGPackets) {
-					byte result = ProcessCDGPackets(::SendMessage(g_hWinampWindow, WM_WA_IPC, 0, IPC_GETOUTPUTTIME),&redrawRect,&invalidRect);
+					CDG_REFRESH_FLAGS result = ProcessCDGPackets(::SendMessage(g_hWinampWindow, WM_WA_IPC, 0, IPC_GETOUTPUTTIME),&redrawRect,&invalidRect);
 					// Each call to ProcessCDGPackets will return a byte, which is an accumulation of the results from the
 					// CDG instructions that were processed.
 					// If the 1 bit is set, then the area defined by redrawRect needs redrawn and repainted.
 					// If the 2 bit is set, then the entire background needs repainted.
 					// If the 4 bit is set, then the area defined by invalidRect needs repainted.
-					if (result & 0x01) {
+					if (result & CDG_REFRESH_REDRAW_RECT) {
 						DrawForeground(&redrawRect);
 						if (invalidRect.right > 0) {
 							::UnionRect(&invalidRect, &invalidRect, &redrawRect);
@@ -158,14 +158,14 @@ DWORD WINAPI CDGProcessor(LPVOID pParams) {
 						else
 							memcpy(&invalidRect, &redrawRect, sizeof(RECT));
 					}
-					if (result & 0x05) {
+					if (result & (CDG_REFRESH_REDRAW_RECT | CDG_REFRESH_INVALIDATE_RECT)) {
 						RenderForegroundBackBuffer(&invalidRect);
 						CDGRectToClientRect(&invalidRect);
 						::WaitForSingleObject(g_hPaintMutex,INFINITE);
 						::InvalidateRect(g_hForegroundWindow, &invalidRect,FALSE);
 						::ReleaseMutex(g_hPaintMutex);
 					}
-					if (result & 0x02) {
+					if (result & CDG_REFRESH_ENTIRE_BACKGROUND) {
 						::WaitForSingleObject(g_hPaintMutex, INFINITE);
 						::InvalidateRect(g_hBackgroundWindow, NULL, FALSE);
 						::ReleaseMutex(g_hPaintMutex);

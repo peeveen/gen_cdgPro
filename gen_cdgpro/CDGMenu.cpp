@@ -33,28 +33,28 @@ void ToggleTopmost() {
 INT_PTR AboutDialogProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 	switch (msg)
 	{
-	case WM_INITDIALOG: {
-		RECT rParent, rThis, rCentered;
-		::GetWindowRect(g_hForegroundWindow, &rParent);
-		::GetWindowRect(hwnd, &rThis);
-		::CopyRect(&rCentered, &rParent);
-		::OffsetRect(&rThis, -rThis.left, -rThis.top);
-		::OffsetRect(&rCentered, -rCentered.left, -rCentered.top);
-		::OffsetRect(&rCentered, -rThis.right, -rThis.bottom);
-		::SetWindowPos(hwnd, HWND_TOP, rParent.left + (rCentered.right / 2), rParent.top + (rCentered.bottom / 2), 0, 0, SWP_NOSIZE);
-		if (g_bDialogSetsTopmost)
-			ToggleTopmost();
-		return TRUE;
-	}
-	case WM_COMMAND:
-		switch (LOWORD(wParam))
-		{
-		case IDOK:
+		case WM_INITDIALOG: {
+			RECT rParent, rThis, rCentered;
+			::GetWindowRect(g_hForegroundWindow, &rParent);
+			::GetWindowRect(hwnd, &rThis);
+			::CopyRect(&rCentered, &rParent);
+			::OffsetRect(&rThis, -rThis.left, -rThis.top);
+			::OffsetRect(&rCentered, -rCentered.left, -rCentered.top);
+			::OffsetRect(&rCentered, -rThis.right, -rThis.bottom);
+			::SetWindowPos(hwnd, HWND_TOP, rParent.left + (rCentered.right / 2), rParent.top + (rCentered.bottom / 2), 0, 0, SWP_NOSIZE);
 			if (g_bDialogSetsTopmost)
 				ToggleTopmost();
-			EndDialog(hwnd, wParam);
 			return TRUE;
 		}
+		case WM_COMMAND:
+			switch (LOWORD(wParam))
+			{
+			case IDOK:
+				if (g_bDialogSetsTopmost)
+					ToggleTopmost();
+				EndDialog(hwnd, wParam);
+				return TRUE;
+			}
 	}
 	return FALSE;
 }

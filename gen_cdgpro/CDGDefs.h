@@ -120,3 +120,15 @@ struct CDGPacket {
 	BYTE unused2[4];
 };
 
+// Each call to ProcessCDGPackets will return a byte, which is an accumulation of the results from the
+// CDG instructions that were processed.
+typedef BYTE CDG_REFRESH_FLAGS;
+ 
+// If no bits are set, nothing needs refreshed.
+#define CDG_REFRESH_NONE (0x00)
+// If the 1 bit is set, then the area defined by redrawRect needs redrawn and repainted.
+#define CDG_REFRESH_REDRAW_RECT (0x01)
+// If the 2 bit is set, then the entire background needs repainted.
+#define CDG_REFRESH_ENTIRE_BACKGROUND (0x02)
+// If the 4 bit is set, then the area defined by invalidRect needs repainted.
+#define CDG_REFRESH_INVALIDATE_RECT (0x04)

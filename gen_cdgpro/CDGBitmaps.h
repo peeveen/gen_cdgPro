@@ -6,9 +6,28 @@
 #include <gdipluscolor.h>
 using namespace Gdiplus;
 
+// Functions relating to the initialization/cleanup of bitmaps and their device contexts.
+
+/// <summary>
+/// Creates the bitmaps in memory that are necessary for our CDG processing.
+/// </summary>
+/// <returns>True if successful.</returns>
 bool CreateBitmaps();
+
+/// <summary>
+/// Cleans up all allocated bitmaps.
+/// </summary>
 void DestroyBitmaps();
+
+/// <summary>
+/// Clears the foreground buffer bitmap (sets all pixels to the current background
+/// colour).
+/// </summary>
 void ClearForegroundBuffer();
+
+/// <summary>
+/// Resizes bitmaps as a result of manual window resizing.
+/// </summary>
 void ResizeForegroundBackBufferBitmap();
 
 extern HDC g_hScaledForegroundDCs[];
