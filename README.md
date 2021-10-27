@@ -4,7 +4,7 @@ CDG display plugin for Winamp.
 ![CDG Pro](/media/cdgProScreenshot.png?raw=true)
 
 * Transparency, to allow visualization (e.g. Milkdrop) to show through.
-* Scale2X smoothing to de-blockify the graphics. Multiple passes can be configured.
+* [Scale2X smoothing](https://www.scale2x.it/) to de-blockify the graphics. Multiple passes can be configured.
 * Display your own logo when no CDG file is playing.
 * Various other stuff!
 
