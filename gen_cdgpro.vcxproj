@@ -137,7 +137,7 @@
       <AdditionalDependencies>gdiplus.lib;Msimg32.lib;kernel32.lib;user32.lib;gdi32.lib;comdlg32.lib;advapi32.lib;shell32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PostBuildEvent>
-      <Command>copy "$(OutDir)\$(TargetFileName)" "C:\Program Files (x86)\Winamp\Plugins" &amp;&amp; copy "$(SolutionDir)\install\gen_cdgPro.ini" "C:\Program Files (x86)\Winamp\Plugins" &amp;&amp; copy "$(OutDir)\$(TargetFileName)" "$(SolutionDir)\install"</Command>
+      <Command>copy "$(OutDir)\$(TargetFileName)" "C:\Program Files (x86)\Winamp\Plugins" &amp;&amp; copy "$(SolutionDir)\gen_cdgPro.ini" "C:\Program Files (x86)\Winamp\Plugins"</Command>
       <Message>Copying DLL to WinAmp plugins folder.</Message>
     </PostBuildEvent>
   </ItemDefinitionGroup>
