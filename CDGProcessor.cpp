@@ -22,6 +22,9 @@ DWORD g_nCDGPackets = 0;
 // Current CDG instruction index.
 DWORD g_nCDGPC = 0;
 
+/// <summary>
+/// Clear and deallocate the CDG instruction buffer.
+/// </summary>
 void ClearExistingCDGData() {
 	if (g_pCDGData) {
 		free(g_pCDGData);
@@ -30,6 +33,11 @@ void ClearExistingCDGData() {
 	g_nCDGPackets = 0;
 }
 
+/// <summary>
+/// Reads the CDG instructions from the corresponding CDG for the given file, if one exists.
+/// </summary>
+/// <param name="pFileBeingPlayed">Path to current file being played. Might be MP3, WAV, whatever.</param>
+/// <returns>True if successful.</returns>
 bool ReadCDGData(const WCHAR* pFileBeingPlayed) {
 	ClearExistingCDGData();
 	bool result = false;
@@ -63,6 +71,14 @@ bool ReadCDGData(const WCHAR* pFileBeingPlayed) {
 	return result;
 }
 
+/// <summary>
+/// Process enough CDG instructions to bring us up to the current time.
+/// </summary>
+/// <param name="songPosition">Current song position (milliseconds). Will be compared with the current CDG program counter to
+/// determine how many instructions need processed.</param>
+/// <param name="pRedrawRect">Rectangle that will receive an accumulated redraw region for all processed instructions.</param>
+/// <param name="pInvalidRect">Rectangle that will receive an accumulated invalidate region for all processed instructions.</param>
+/// <returns>Flags indicating what level of screen redraw/invalidation is required.</returns>
 CDG_REFRESH_FLAGS ProcessCDGPackets(long songPosition,RECT *pRedrawRect,RECT *pInvalidRect) {
 	CDG_REFRESH_FLAGS result = CDG_REFRESH_NONE;
 	HANDLE waitHandles[] = { g_hStopCDGProcessingEvent, g_hStopCDGThreadEvent };
@@ -122,6 +138,9 @@ CDG_REFRESH_FLAGS ProcessCDGPackets(long songPosition,RECT *pRedrawRect,RECT *pI
 	return result;
 }
 
+/// <summary>
+/// Resets the CDG processor, zero-ing the program counter, etc.
+/// </summary>
 void ResetProcessor() {
 	g_nCDGPC = 0;
 	ResetPalette();
@@ -129,9 +148,15 @@ void ResetProcessor() {
 	SetBackgroundColorIndex(0);
 }
 
+/// <summary>
+/// Thread for CDG processing.
+/// </summary>
+/// <param name="pParams">Thread params.</param>
+/// <returns>Thread result.</returns>
 DWORD WINAPI CDGProcessor(LPVOID pParams) {
 	HANDLE waitHandles[] = { g_hStopCDGProcessingEvent, g_hStopCDGThreadEvent,g_hSongLoadedEvent };
 	static RECT invalidRect,redrawRect;
+	// Run indefinitely, until an event is raised to get us out of the loop (Winamp quit, song stopped, etc).
 	for (;;) {
 		ResetProcessor();
 		int waitResult = ::WaitForMultipleObjects(2, waitHandles + 1, FALSE, INFINITE);
@@ -144,7 +169,7 @@ DWORD WINAPI CDGProcessor(LPVOID pParams) {
 				::ZeroMemory(&invalidRect, sizeof(RECT));
 				::ZeroMemory(&redrawRect, sizeof(RECT));
 				if (g_nCDGPC < g_nCDGPackets) {
-					CDG_REFRESH_FLAGS result = ProcessCDGPackets(::SendMessage(g_hWinampWindow, WM_WA_IPC, 0, IPC_GETOUTPUTTIME),&redrawRect,&invalidRect);
+					CDG_REFRESH_FLAGS result = ProcessCDGPackets(::SendMessage(g_hWinampWindow, WM_WA_IPC, 0, IPC_GETOUTPUTTIME), &redrawRect, &invalidRect);
 					// Each call to ProcessCDGPackets will return a byte, which is an accumulation of the results from the
 					// CDG instructions that were processed.
 					// If the 1 bit is set, then the area defined by redrawRect needs redrawn and repainted.
@@ -152,9 +177,8 @@ DWORD WINAPI CDGProcessor(LPVOID pParams) {
 					// If the 4 bit is set, then the area defined by invalidRect needs repainted.
 					if (result & CDG_REFRESH_REDRAW_RECT) {
 						DrawForeground(&redrawRect);
-						if (invalidRect.right > 0) {
+						if (invalidRect.right > 0)
 							::UnionRect(&invalidRect, &invalidRect, &redrawRect);
-						}
 						else
 							memcpy(&invalidRect, &redrawRect, sizeof(RECT));
 					}
@@ -180,6 +204,10 @@ DWORD WINAPI CDGProcessor(LPVOID pParams) {
 	return 0;
 }
 
+/// <summary>
+/// Starts the CDG processor.
+/// </summary>
+/// <returns>True if successful.</returns>
 bool StartCDGProcessor() {
 	ResetProcessor();
 	g_hStopCDGProcessingEvent = ::CreateEvent(NULL, TRUE, FALSE, NULL);
@@ -190,6 +218,9 @@ bool StartCDGProcessor() {
 	return !!g_hCDGProcessingThread;
 }
 
+/// <summary>
+/// Stops the CDG processor.
+/// </summary>
 void StopCDGProcessor() {
 	::SetEvent(g_hStopCDGProcessingEvent);
 	::SetEvent(g_hStopCDGThreadEvent);

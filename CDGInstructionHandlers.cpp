@@ -12,6 +12,10 @@ BYTE g_nLastMemoryPresetColor = -1;
 // Channel mask. By default, channels 0 and 4 are shown.
 unsigned short g_nChannelMask = 0b0000000000010001;
 
+/// <summary>
+/// Sets the given rectangle to the coordinates and extents of the full CGG canvas, including invisible border area.
+/// </summary>
+/// <param name="pRect">Rectangle to set.</param>
 void SetFullCanvas(RECT* pRect) {
 	*pRect = { 0,0,CDG_WIDTH,CDG_HEIGHT };
 }
@@ -159,6 +163,7 @@ CDG_REFRESH_FLAGS Scroll(BYTE color, BYTE hScroll, BYTE hScrollOffset, BYTE vScr
 	if (!copy) {
 		solidBrush = ::CreateSolidBrush(RGB(g_palette[color].rgbRed, g_palette[color].rgbGreen, g_palette[color].rgbBlue));
 		oldBrush = (HBRUSH)::SelectObject(hForegroundDC, solidBrush);
+		// Set operation to PATCOPY instead of SRCCOPY, so that the upcoming BitBlt functions just draw the plain colour.
 		rop = PATCOPY;
 		if (color != g_nLastMemoryPresetColor)
 			g_nLastMemoryPresetColor = -1;

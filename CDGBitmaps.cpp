@@ -15,11 +15,11 @@ HDC g_hScaledForegroundDCs[SUPPORTED_SCALING_LEVELS];
 HBITMAP g_hScaledForegroundBitmaps[SUPPORTED_SCALING_LEVELS];
 BYTE* g_pScaledForegroundBitmapBits[SUPPORTED_SCALING_LEVELS];
 
-// The DC containing the mask for the CDG graphics.
+// The DC containing the monochrome mask for the CDG graphics.
 HDC g_hMaskDC = NULL;
 HBITMAP g_hMaskBitmap = NULL;
 
-// The DC containing the border mask for the CDG graphics.
+// The DC containing the outline/border mask for the CDG graphics.
 HDC g_hBorderMaskDC = NULL;
 HBITMAP g_hBorderMaskBitmap = NULL;
 BYTE* g_pBorderMaskBitmapBits = NULL;
@@ -61,16 +61,33 @@ HDC g_hScreenDC = NULL;
 Image* g_pLogoImage = NULL;
 SIZE g_logoSize;
 
+/// <summary>
+/// Cleanup the logo data.
+/// </summary>
 void DestroyLogo() {
 	if (g_pLogoImage)
 		delete g_pLogoImage;
 }
 
+/// <summary>
+/// Create our unique transparent colour brush.
+/// </summary>
+/// <returns>True if created okay.</returns>
 bool CreateTransparentBrush() {
 	g_hTransparentBrush = ::CreateSolidBrush(DEFAULT_TRANSPARENT_COLORREF);
 	return !!g_hTransparentBrush;
 }
 
+/// <summary>
+/// Creates a bitmap and device context containing that bitmap.
+/// </summary>
+/// <param name="phDC">Pointer to handle that will receive the DC.</param>
+/// <param name="phBitmap">Pointer to handle that will receive the bitmap.</param>
+/// <param name="ppBitmapBits">Pointer to pointer that will receive the address of the bitmap bits.</param>
+/// <param name="nWidth">Width of bitmap to create.</param>
+/// <param name="nHeight">Height of bitmap to create. Can be negative for inverse vertical coordinates.</param>
+/// <param name="nBitCount">Bit depth of bitmap.</param>
+/// <returns>True if successful.</returns>
 bool CreateBitmapSurface(HDC* phDC, HBITMAP* phBitmap, LPVOID* ppBitmapBits, int nWidth, int nHeight, int nBitCount) {
 	BITMAPINFO bitmapInfo;
 	bitmapInfo.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
@@ -96,6 +113,10 @@ bool CreateBitmapSurface(HDC* phDC, HBITMAP* phBitmap, LPVOID* ppBitmapBits, int
 	return false;
 }
 
+/// <summary>
+/// Creates the various necessary foreground device contexts (one per scaling level).
+/// </summary>
+/// <returns>True if successful.</returns>
 bool CreateForegroundDCs() {
 	int nScaling = 1;
 	for (int f = 0; f < SUPPORTED_SCALING_LEVELS; ++f) {
@@ -106,10 +127,18 @@ bool CreateForegroundDCs() {
 	return true;
 }
 
+/// <summary>
+/// Creates the temporary scroll device context and bitmap.
+/// </summary>
+/// <returns>True if successful.</returns>
 bool CreateScrollBufferDC() {
 	return CreateBitmapSurface(&g_hScrollBufferDC, &g_hScrollBufferBitmap, (LPVOID*)&g_pScrollBufferBitmapBits, CDG_BITMAP_WIDTH, -CDG_BITMAP_HEIGHT, 4);
 }
 
+/// <summary>
+/// Creates the masked foreground DC.
+/// </summary>
+/// <returns>True if successful.</returns>
 bool CreateMaskedForegroundDC() {
 	g_hMaskedForegroundDCAccessMutex = ::CreateMutex(NULL, FALSE, NULL);
 	if (g_hMaskedForegroundDCAccessMutex) {
@@ -126,6 +155,10 @@ bool CreateMaskedForegroundDC() {
 	return false;
 }
 
+/// <summary>
+/// Creates the foreground back buffer device context.
+/// </summary>
+/// <returns>True if successful.</returns>
 bool CreateForegroundBackBufferDC() {
 	g_hForegroundBackBufferDCAccessMutex = ::CreateMutex(NULL, FALSE, NULL);
 	if (g_hForegroundBackBufferDCAccessMutex) {
@@ -139,6 +172,9 @@ bool CreateForegroundBackBufferDC() {
 	return false;
 }
 
+/// <summary>
+/// Resizes the foreground back buffer bitmap when the window is resized.
+/// </summary>
 void ResizeForegroundBackBufferBitmap() {
 	if (!g_hForegroundBackBufferDC)
 		return;
@@ -160,6 +196,10 @@ void ResizeForegroundBackBufferBitmap() {
 	}
 }
 
+/// <summary>
+/// Creates the monochrome mask device context and bitmap.
+/// </summary>
+/// <returns>True if successful.</returns>
 bool CreateMaskDC() {
 	g_hMaskDC = ::CreateCompatibleDC(g_hForegroundWindowDC);
 	if (g_hMaskDC) {
@@ -172,8 +212,13 @@ bool CreateMaskDC() {
 	return false;
 }
 
+/// <summary>
+/// Create our border mask device context and bitmap.
+/// </summary>
+/// <returns>True if successful.</returns>
 bool CreateBorderMaskDC() {
 	bool result = CreateBitmapSurface(&g_hBorderMaskDC, &g_hBorderMaskBitmap, (LPVOID*)&g_pBorderMaskBitmapBits, CDG_MAXIMUM_BITMAP_WIDTH, CDG_MAXIMUM_BITMAP_HEIGHT, 1);
+	// It's not a black and white palette, it's white and black!
 	RGBQUAD monoPalette[] = {
 		{255,255,255,0},
 		{0,0,0,0}
@@ -181,10 +226,17 @@ bool CreateBorderMaskDC() {
 	return result && ::SetDIBColorTable(g_hBorderMaskDC, 0, 2, monoPalette);
 }
 
+/// <summary>
+/// Create the one-pixel background DC and bitmap.
+/// </summary>
+/// <returns>True if successful.</returns>
 bool CreateBackgroundDC() {
 	return CreateBitmapSurface(&g_hBackgroundDC, &g_hBackgroundBitmap, (LPVOID*)&g_pBackgroundBitmapBits, 1, 1, 32);
 }
 
+/// <summary>
+/// Clear the background buffer, filling it with transparency.
+/// </summary>
 void ClearForegroundBuffer() {
 	RECT r = { 0,0,CDG_MAXIMUM_BITMAP_WIDTH, CDG_MAXIMUM_BITMAP_HEIGHT };
 	::FillRect(g_hMaskedForegroundDC, &r, g_hTransparentBrush);
@@ -194,6 +246,10 @@ void ClearForegroundBuffer() {
 	::ReleaseMutex(g_hForegroundBackBufferDCAccessMutex);
 }
 
+/// <summary>
+/// Loads the logo file into memory.
+/// </summary>
+/// <returns>True if successful.</returns>
 bool LoadLogo() {
 	g_pLogoImage = new Image(g_szLogoPath);
 	if (g_pLogoImage->GetLastStatus() == Ok) {
@@ -205,6 +261,10 @@ bool LoadLogo() {
 	return false;
 }
 
+/// <summary>
+/// Creates the logo device context and bitmap.
+/// </summary>
+/// <returns>True if successful.</returns>
 bool CreateLogoDC() {
 	// If there is no logo, we will use a 1x1 transparent pixel instead.
 	bool logoFound = LoadLogo();
@@ -228,6 +288,10 @@ bool CreateLogoDC() {
 	return false;
 }
 
+/// <summary>
+/// Creates all necessary device contexts and bitmaps.
+/// </summary>
+/// <returns>True if successful.</returns>
 bool CreateBitmaps() {
 	g_hScreenDC = ::GetDC(NULL);
 	return CreateTransparentBrush() &&
@@ -241,6 +305,11 @@ bool CreateBitmaps() {
 		CreateMaskedForegroundDC();
 }
 
+/// <summary>
+/// Deletes a given device context and corresponding bitmap.
+/// </summary>
+/// <param name="hDC">Device context to destroy.</param>
+/// <param name="hBitmap">Bitmap to destroy.</param>
 void DeleteDCAndBitmap(HDC hDC, HBITMAP hBitmap) {
 	if (hDC)
 		::DeleteDC(hDC);
@@ -248,6 +317,9 @@ void DeleteDCAndBitmap(HDC hDC, HBITMAP hBitmap) {
 		::DeleteObject(hBitmap);
 }
 
+/// <summary>
+/// Cleans up all bitmaps and device contexts.
+/// </summary>
 void DestroyBitmaps() {
 	DeleteDCAndBitmap(g_hMaskDC, g_hMaskBitmap);
 	DeleteDCAndBitmap(g_hBorderMaskDC, g_hBorderMaskBitmap);

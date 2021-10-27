@@ -14,6 +14,14 @@ using namespace Gdiplus;
 int g_nCanvasXOffset = 0;
 int g_nCanvasYOffset = 0;
 
+/// <summary>
+/// Scale2X smoothing algorithm. You can find details about this online.
+/// </summary>
+/// <param name="pSourceBitmapBits">The source bitmap to smooth.</param>
+/// <param name="pDestinationBitmapBits">The destination bitmap. Must be 2x the size.</param>
+/// <param name="pInvalidRect">The rectangle of the source bitmap that needs redone.</param>
+/// <param name="nSourceBitmapWidth">The width of the source bitmap. Needed for some coordinate calculation, and
+/// saves time to pass it in than calculate it from the provided bitmap.</param>
 void Perform2xSmoothing(BYTE* pSourceBitmapBits, BYTE* pDestinationBitmapBits, RECT *pInvalidRect, int nSourceBitmapWidth) {
 	// 2x smoothing
 	static BYTE EAandEB, BAandBB, HAandHB;
@@ -80,12 +88,18 @@ void Perform2xSmoothing(BYTE* pSourceBitmapBits, BYTE* pDestinationBitmapBits, R
 	}
 }
 
+/// <summary>
+/// Draw the background. We streeeeetch out one coloured pixel to the entire window.
+/// </summary>
 void DrawBackground() {
 	RECT r;
 	::GetClientRect(g_hBackgroundWindow, &r);
 	::StretchBlt(g_hBackgroundWindowDC, 0, 0, r.right - r.left, r.bottom - r.top, g_hBackgroundDC, 0, 0, 1, 1, SRCCOPY);
 }
 
+/// <summary>
+/// Paint the foreground back buffer.
+/// </summary>
 void PaintForegroundBackBuffer() {
 	int nScaling = 1 << g_nSmoothingPasses;
 	int nCanvasSourceX = (CDG_CANVAS_X + g_nCanvasXOffset) * nScaling;
@@ -93,7 +107,7 @@ void PaintForegroundBackBuffer() {
 	int nCanvasWidth = CDG_CANVAS_WIDTH * nScaling;
 	int nCanvasHeight = CDG_CANVAS_HEIGHT * nScaling;
 	::WaitForSingleObject(g_hForegroundBackBufferDCAccessMutex, INFINITE);
-	RECT backBufferRect = { 0,0,g_nForegroundBackBufferWidth,g_nForegroundBackBufferHeight };
+	RECT backBufferRect = { 0, 0, g_nForegroundBackBufferWidth, g_nForegroundBackBufferHeight };
 	double scaleXMultiplier = g_nForegroundBackBufferWidth / (double)CDG_CANVAS_WIDTH;
 	double scaleYMultiplier = g_nForegroundBackBufferHeight / (double)CDG_CANVAS_HEIGHT;
 	int nScaledXMargin = (int)(g_nMargin * scaleXMultiplier);
@@ -106,6 +120,11 @@ void PaintForegroundBackBuffer() {
 	::ReleaseMutex(g_hForegroundBackBufferDCAccessMutex);
 }
 
+/// <summary>
+/// Scale the given rectangle.
+/// </summary>
+/// <param name="pRect">Rectangle to scale.</param>
+/// <param name="nScale">Amount to scale by.</param>
 void ScaleRect(RECT* pRect, int nScale) {
 	pRect->left *= nScale;
 	pRect->right *= nScale;
@@ -113,8 +132,13 @@ void ScaleRect(RECT* pRect, int nScale) {
 	pRect->bottom *= nScale;
 }
 
+/// <summary>
+/// Renders the foreground back buffer.
+/// </summary>
+/// <param name="pInvalidCDGRect">Rectangle of area that needs rendered.</param>
 void RenderForegroundBackBuffer(RECT* pInvalidCDGRect) {
 	static RECT invalidRect;
+	// Choose the right scaled foreground DC.
 	HDC hSourceDC = g_hScaledForegroundDCs[g_nSmoothingPasses];
 	int nScaling = 1<<g_nSmoothingPasses;
 	static RECT cdgAllRect = { 0, 0, CDG_WIDTH, CDG_HEIGHT };
@@ -127,11 +151,19 @@ void RenderForegroundBackBuffer(RECT* pInvalidCDGRect) {
 		memcpy(&invalidRect, pInvalidCDGRect, sizeof(RECT));
 	else
 		memcpy(&invalidRect, &cdgRect, sizeof(RECT));
+
+	// Scale the rectangles accordingly.
 	ScaleRect(&cdgRect, nScaling);
 	ScaleRect(&invalidRect, nScaling);
+
 	int invalidCDGRectWidth = invalidRect.right - invalidRect.left;
 	int invalidCDGRectHeight = invalidRect.bottom - invalidRect.top;
+
+	// Blit the foreground DC to the mask DC. The mask DC/bitmap is monochrome (palette 0=white, palette 1=black),
+	// so this will convert all palette 0 entries in the source DC to white, and all others to black.
 	::BitBlt(g_hMaskDC, invalidRect.left, invalidRect.top, invalidCDGRectWidth, invalidCDGRectHeight, hSourceDC, invalidRect.left, invalidRect.top, SRCCOPY);
+
+	// Clear the border mask bitmap.
 	::ZeroMemory(g_pBorderMaskBitmapBits, (CDG_MAXIMUM_BITMAP_WIDTH * CDG_MAXIMUM_BITMAP_HEIGHT) / 8);
 	static RECT outlineRect;
 	memcpy(&outlineRect, &invalidRect, sizeof(RECT));
@@ -146,11 +178,17 @@ void RenderForegroundBackBuffer(RECT* pInvalidCDGRect) {
 	}
 	invalidCDGRectWidth = invalidRect.right - invalidRect.left;
 	invalidCDGRectHeight = invalidRect.bottom - invalidRect.top;
+	// Blit the mask bitmap to the border mask bitmap. To create an outline, we have to do
+	// this NxN times to make a mask that is thicker than the original foreground graphics.
 	for (int f = -nScaling; f <= nScaling; ++f)
 		for (int g = -nScaling; g <= nScaling; ++g)
 			if (g_bDrawOutline || (!f && !g))
 				::BitBlt(g_hBorderMaskDC, f + outlineRect.left, g + outlineRect.top, outlineRect.right- outlineRect.left, outlineRect.bottom - outlineRect.top, g_hMaskDC, outlineRect.left, outlineRect.top, SRCPAINT);
+
 	::WaitForSingleObject(g_hMaskedForegroundDCAccessMutex, INFINITE);
+	// Now blit the foreground bitmap to the masked foreground bitmap, using the border mask bitmap as a mask.
+	// Only bits from the foreground bitmap that "get through" the mask will make it to the masked foreground bitmap,
+	// leaving transparency everywhere else.
 	::MaskBlt(g_hMaskedForegroundDC, invalidRect.left, invalidRect.top, invalidCDGRectWidth, invalidCDGRectHeight, hSourceDC, invalidRect.left, invalidRect.top, g_hBorderMaskBitmap, invalidRect.left, invalidRect.top, MAKEROP4(SRCCOPY, PATCOPY));
 	::ReleaseMutex(g_hMaskedForegroundDCAccessMutex);
 	PaintForegroundBackBuffer();

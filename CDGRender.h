@@ -9,5 +9,6 @@ void PaintForeground(RECT *pInvalidRect);
 void RenderForegroundBackBuffer(RECT* pInvalidCDGRect);
 void PaintForegroundBackBuffer();
 
+// Offsets used when scrolling fine-tuned pixel amounts.
 extern int g_nCanvasXOffset;
 extern int g_nCanvasYOffset;

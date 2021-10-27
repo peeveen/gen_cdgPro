@@ -7,6 +7,12 @@
 #include "CDGRender.h"
 #include "resource.h"
 
+// Our CDGPro "window" is actually a sandwich of three windows that are kept "in-sync"
+// positionally and "sizely". The bottommost window is the background window, which
+// is always a plain colour. Then we have the logo window (which is only shown when no
+// CDG file is being processed). Then we have the CDG foreground window, which shows the
+// graphics from the CDG canvas.
+
 // Window class names.
 const WCHAR* g_foregroundWindowClassName = L"CDGProFG";
 const WCHAR* g_backgroundWindowClassName = L"CDGProBG";
@@ -32,6 +38,8 @@ SIZE g_logoWindowOffset = { 0,0 };
 BLENDFUNCTION g_blendFn= { AC_SRC_OVER ,0,255,AC_SRC_ALPHA };
 
 void CDGRectToClientRect(RECT* pRect) {
+	// Convert the given CDG rect coordinates to onscreen window coordinates.
+	// It's a complex operation!
 	static RECT clientRect;
 	::GetClientRect(g_hForegroundWindow, &clientRect);
 	::OffsetRect(pRect, -CDG_CANVAS_X, -CDG_CANVAS_Y);
@@ -58,6 +66,9 @@ void CDGRectToClientRect(RECT* pRect) {
 	::IntersectRect(pRect, pRect, &clientRect);
 }
 
+/// <summary>
+/// The logo position changes when the window resizes.
+/// </summary>
 void UpdateLogoPosition() {
 	::SetWindowPos(g_hForegroundWindow, g_hLogoWindow, 0, 0,0,0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
 	static RECT foregroundClientRect,foregroundWindowRect;
@@ -165,64 +176,74 @@ LRESULT CALLBACK ForegroundWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARA
 	static PAINTSTRUCT ps;
 	switch (uMsg)
 	{
-	case WM_NCHITTEST: {
-		LRESULT hit = DefWindowProc(hwnd, uMsg, wParam, lParam);
-		if (hit == HTCLIENT)
-			hit = HTCAPTION;
-		return hit;
-	}
-	case WM_KEYDOWN:
-		if (wParam == VK_ESCAPE) {
-			SetMenuItemCheckmark(MENUITEM_FULLSCREEN_ID, false);
-			SetFullScreen(false);
+		// Used for "grab testing".
+		case WM_NCHITTEST: {
+			LRESULT hit = DefWindowProc(hwnd, uMsg, wParam, lParam);
+			if (hit == HTCLIENT)
+				hit = HTCAPTION;
+			return hit;
 		}
-		break;
-	case WM_SHOWWINDOW:
-		if (!wParam)
+		// You can use the escape key to exit fullscreen mode.
+		case WM_KEYDOWN:
+			if (wParam == VK_ESCAPE) {
+				SetMenuItemCheckmark(MENUITEM_FULLSCREEN_ID, false);
+				SetFullScreen(false);
+			}
 			break;
-	case WM_WINDOWPOSCHANGED:
-		::SetWindowPos(g_hBackgroundWindow, hwnd, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-		::SetWindowPos(g_hLogoWindow,NULL, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE|SWP_NOACTIVATE);
-		::SetWindowPos(hwnd, g_hLogoWindow, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
-		UpdateLogoPosition();
-		break;
-	case WM_NCRBUTTONUP: {
-		int xPos = GET_X_LPARAM(lParam);
-		int yPos = GET_Y_LPARAM(lParam);
-		ShowMenu(xPos, yPos);
-		break;
-	}
-	case WM_MOVE: {
-		int x = (int)(short)LOWORD(lParam);
-		int y = (int)(short)HIWORD(lParam);
-		::SetWindowPos(g_hBackgroundWindow, hwnd, x, y, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE);
-		UpdateLogoPosition();
-		break;
-	}
-	case WM_SIZE: {
-		int w = (int)(short)LOWORD(lParam);
-		int h = (int)(short)HIWORD(lParam);
-		::SetWindowPos(g_hBackgroundWindow, hwnd, 0, 0, w, h, SWP_NOMOVE | SWP_NOACTIVATE);
-		if (g_hForegroundBackBufferDC) {
-			ResizeForegroundBackBufferBitmap();
-			PaintForegroundBackBuffer();
+		case WM_SHOWWINDOW:
+			if (!wParam)
+				break;
+		// If a window changes moves, activates, deactivates, or changes z-order, the others have to follow suit!
+		case WM_WINDOWPOSCHANGED:
+			::SetWindowPos(g_hBackgroundWindow, hwnd, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+			::SetWindowPos(g_hLogoWindow,NULL, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE|SWP_NOACTIVATE);
+			::SetWindowPos(hwnd, g_hLogoWindow, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+			UpdateLogoPosition();
+			break;
+		// Right-mouse button click ... show the menu!
+		case WM_NCRBUTTONUP: {
+			int xPos = GET_X_LPARAM(lParam);
+			int yPos = GET_Y_LPARAM(lParam);
+			ShowMenu(xPos, yPos);
+			break;
 		}
-		UpdateLogoPosition();
-		break;
-	}
-	case WM_CLOSE:
-		return 1;
-	case WM_PAINT: {
-		if (g_bDoubleBuffered)
-			::SwapBuffers(g_hForegroundWindowDC);
-		::WaitForSingleObject(g_hPaintMutex, INFINITE);
-		::BeginPaint(g_hForegroundWindow, &ps);
-		PaintForeground(&ps.rcPaint);
-		::EndPaint(g_hForegroundWindow, &ps);
-		LRESULT result = DefWindowProc(hwnd, uMsg, wParam, lParam);
-		::ReleaseMutex(g_hPaintMutex);
-		return result;
+		// If a window moves, the others have to move too!
+		case WM_MOVE: {
+			int x = (int)(short)LOWORD(lParam);
+			int y = (int)(short)HIWORD(lParam);
+			::SetWindowPos(g_hBackgroundWindow, hwnd, x, y, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE);
+			UpdateLogoPosition();
+			break;
 		}
+		// If a window changes size, the others have to change too!
+		case WM_SIZE: {
+			int w = (int)(short)LOWORD(lParam);
+			int h = (int)(short)HIWORD(lParam);
+			::SetWindowPos(g_hBackgroundWindow, hwnd, 0, 0, w, h, SWP_NOMOVE | SWP_NOACTIVATE);
+			if (g_hForegroundBackBufferDC) {
+				ResizeForegroundBackBufferBitmap();
+				PaintForegroundBackBuffer();
+			}
+			UpdateLogoPosition();
+			break;
+		}
+		// Do not allow the user to manually close this window. It will close when Winamp closes,
+		// or when the song ends.
+		case WM_CLOSE:
+			return 1;
+		// Window needs painted.
+		case WM_PAINT: {
+			if (g_bDoubleBuffered)
+				::SwapBuffers(g_hForegroundWindowDC);
+			::WaitForSingleObject(g_hPaintMutex, INFINITE);
+			::BeginPaint(g_hForegroundWindow, &ps);
+			// Paint from our foreground back-buffer.
+			PaintForeground(&ps.rcPaint);
+			::EndPaint(g_hForegroundWindow, &ps);
+			LRESULT result = DefWindowProc(hwnd, uMsg, wParam, lParam);
+			::ReleaseMutex(g_hPaintMutex);
+			return result;
+			}
 	}
 	return DefWindowProc(hwnd, uMsg, wParam, lParam);
 }
@@ -231,15 +252,15 @@ LRESULT CALLBACK BackgroundWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARA
 {
 	switch (uMsg)
 	{
-	case WM_PAINT:
-		DrawBackground();
-		break;
-	case WM_SHOWWINDOW:
-		if (!wParam)
+		case WM_PAINT:
+			DrawBackground();
 			break;
-	case WM_WINDOWPOSCHANGED:
-		::SetWindowPos(hwnd, g_hForegroundWindow, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-		break;
+		case WM_SHOWWINDOW:
+			if (!wParam)
+				break;
+		case WM_WINDOWPOSCHANGED:
+			::SetWindowPos(hwnd, g_hForegroundWindow, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+			break;
 	}
 	return DefWindowProc(hwnd, uMsg, wParam, lParam);
 }
@@ -248,34 +269,34 @@ LRESULT CALLBACK LogoWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lPar
 {
 	switch (uMsg)
 	{
-	case WM_NCHITTEST: {
-		LRESULT hit = DefWindowProc(hwnd, uMsg, wParam, lParam);
-		if (hit == HTCLIENT)
-			hit = HTCAPTION;
-		return hit;
-	}
-	case WM_MOVE: {
-		int x = (int)(short)LOWORD(lParam);
-		int y = (int)(short)HIWORD(lParam);
-		int newForegroundWindowX = x + g_logoWindowOffset.cx;
-		int newForegroundWindowY = y + g_logoWindowOffset.cy;
-		::SetWindowPos(g_hForegroundWindow, g_hLogoWindow, newForegroundWindowX, newForegroundWindowY, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE);
-		break;
-	}
-	case WM_NCRBUTTONUP: {
-		int xPos = GET_X_LPARAM(lParam);
-		int yPos = GET_Y_LPARAM(lParam);
-		ShowMenu(xPos, yPos);
-		break;
-	}
-	case WM_CLOSE:
-		return 1;
-	case WM_SHOWWINDOW:
-		if (!wParam)
+		case WM_NCHITTEST: {
+			LRESULT hit = DefWindowProc(hwnd, uMsg, wParam, lParam);
+			if (hit == HTCLIENT)
+				hit = HTCAPTION;
+			return hit;
+		}
+		case WM_MOVE: {
+			int x = (int)(short)LOWORD(lParam);
+			int y = (int)(short)HIWORD(lParam);
+			int newForegroundWindowX = x + g_logoWindowOffset.cx;
+			int newForegroundWindowY = y + g_logoWindowOffset.cy;
+			::SetWindowPos(g_hForegroundWindow, g_hLogoWindow, newForegroundWindowX, newForegroundWindowY, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE);
 			break;
-	case WM_WINDOWPOSCHANGED:
-		::SetWindowPos(g_hForegroundWindow,hwnd, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-		break;
+		}
+		case WM_NCRBUTTONUP: {
+			int xPos = GET_X_LPARAM(lParam);
+			int yPos = GET_Y_LPARAM(lParam);
+			ShowMenu(xPos, yPos);
+			break;
+		}
+		case WM_CLOSE:
+			return 1;
+		case WM_SHOWWINDOW:
+			if (!wParam)
+				break;
+		case WM_WINDOWPOSCHANGED:
+			::SetWindowPos(g_hForegroundWindow,hwnd, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+			break;
 	}
 	return DefWindowProc(hwnd, uMsg, wParam, lParam);
 }

@@ -22,6 +22,9 @@ void SetMenuItemCheckmark(UINT nMenuItemID, bool set) {
 	::SetMenuItemInfo(g_hMenu, nMenuItemID, FALSE, &menuItemInfo);
 }
 
+/// <summary>
+/// Set the window style at topmost or not.
+/// </summary>
 void ToggleTopmost() {
 	DWORD currentExStyle = ::GetWindowLong(g_hLogoWindow, GWL_EXSTYLE);
 	bool currentlyTopmost = !!(currentExStyle & WS_EX_TOPMOST);
@@ -30,6 +33,15 @@ void ToggleTopmost() {
 	SetMenuItemCheckmark(MENUITEM_TOPMOST_ID, !currentlyTopmost);
 }
 
+/// <summary>
+/// Window proc for the about dialog. May need to temporarily remove and re-apply topmostness to
+/// let the About dialog show through.
+/// </summary>
+/// <param name="hwnd">Handle of About window.</param>
+/// <param name="msg">Message received.</param>
+/// <param name="wParam">wParam of message.</param>
+/// <param name="lParam">lParam of message.</param>
+/// <returns>Value indicating if the message was processed.</returns>
 INT_PTR AboutDialogProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 	switch (msg)
 	{
@@ -59,6 +71,9 @@ INT_PTR AboutDialogProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 	return FALSE;
 }
 
+/// <summary>
+/// Show the about dialog.
+/// </summary>
 void ShowAboutDialog() {
 	// Remove topmost attributes, otherwise the user will never see the about dialog.
 	DWORD currentExStyle = ::GetWindowLong(g_hLogoWindow, GWL_EXSTYLE);
@@ -66,6 +81,9 @@ void ShowAboutDialog() {
 	::DialogBox(g_hInstance, MAKEINTRESOURCE(IDD_ABOUTDIALOG), g_hLogoWindow, (DLGPROC)AboutDialogProc);
 }
 
+/// <summary>
+/// Toggle full screen mode.
+/// </summary>
 void ToggleFullScreen() {
 	bool currentFullScreenState = IsFullScreen();
 	SetFullScreen(!currentFullScreenState);
@@ -99,6 +117,7 @@ bool CreateRightClickMenu() {
 	g_hChannelsMenu = ::CreatePopupMenu();
 	if (g_hChannelsMenu) {
 		WCHAR szChannel[24];
+		// User can choose to process commands that are from the non-standard CDG channels by toggling these.
 		for (int f = 0; f < 16; ++f) {
 			wsprintf(szChannel, L"Channel %d", f);
 			::AppendMenu(g_hChannelsMenu, ((g_nChannelMask & (1 << f)) ? MF_CHECKED : MF_UNCHECKED) | MF_ENABLED | MF_STRING, MENUITEM_CHANNEL + f, szChannel);

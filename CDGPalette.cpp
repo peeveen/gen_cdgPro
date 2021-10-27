@@ -12,8 +12,7 @@ RGBQUAD g_palette[16];
 
 void BuildEffectivePalette() {
 	// First, copy the original palette to the unique palette.
-	for (int f = 0; f < 16; ++f)
-		g_palette[f] = g_cdgPalette[f];
+	memcpy(g_palette, g_cdgPalette, sizeof(RGBQUAD) * 16);
 	// Now check each entry and unique-ify it if necessary.
 	// We will increase/decrease the matching RGB values by this amount.
 	// Each time we find a match, we will increment this value.
@@ -45,12 +44,17 @@ void BuildEffectivePalette() {
 void SetPalette(RGBQUAD* pRGBQuads, int nStartIndex,int nCount) {
 	memcpy(g_cdgPalette + nStartIndex, pRGBQuads, sizeof(RGBQUAD) * nCount);
 	BuildEffectivePalette();
+	// Set the palette in each of the window device contexts.
 	for (int f = 0; f < SUPPORTED_SCALING_LEVELS; ++f)
 		::SetDIBColorTable(g_hScaledForegroundDCs[f], 0, 16, g_palette);
 	::SetDIBColorTable(g_hScrollBufferDC, 0, 16, g_palette);
 	SetBackgroundColorIndex(g_nCurrentTransparentIndex);
 }
 
+/// <summary>
+/// Reset the entire palette, defaulting all colours to the default background colour
+/// as specified in the prefs file.
+/// </summary>
 void ResetPalette() {
 	RGBQUAD emptyPalette[16];
 	::ZeroMemory(emptyPalette, sizeof(RGBQUAD) * 16);
