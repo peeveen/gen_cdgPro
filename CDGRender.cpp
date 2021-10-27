@@ -117,12 +117,17 @@ void RenderForegroundBackBuffer(RECT* pInvalidCDGRect) {
 	static RECT invalidRect;
 	HDC hSourceDC = g_hScaledForegroundDCs[g_nSmoothingPasses];
 	int nScaling = 1<<g_nSmoothingPasses;
-	RECT bitmapRect = { CDG_CANVAS_X,CDG_CANVAS_Y,CDG_CANVAS_X + CDG_CANVAS_WIDTH,CDG_CANVAS_Y + CDG_CANVAS_HEIGHT };
+	static RECT cdgAllRect = { 0, 0, CDG_WIDTH, CDG_HEIGHT };
+	static RECT cdgCanvasRect = { CDG_CANVAS_X, CDG_CANVAS_Y, CDG_CANVAS_X + CDG_CANVAS_WIDTH, CDG_CANVAS_Y + CDG_CANVAS_HEIGHT };
+	RECT cdgRect;
+	// If not performing a scrolling (offset) operation, we can limit the graphical operation to the canvas.
+	// Otherwise, need to take the normally-invisible border graphics into account.
+	memcpy(&cdgRect, (g_nCanvasXOffset == 0 && g_nCanvasYOffset == 0 ? &cdgCanvasRect : &cdgAllRect), sizeof(RECT));
 	if (pInvalidCDGRect)
 		memcpy(&invalidRect, pInvalidCDGRect, sizeof(RECT));
 	else
-		memcpy(&invalidRect, &bitmapRect, sizeof(RECT));
-	ScaleRect(&bitmapRect, nScaling);
+		memcpy(&invalidRect, &cdgRect, sizeof(RECT));
+	ScaleRect(&cdgRect, nScaling);
 	ScaleRect(&invalidRect, nScaling);
 	int invalidCDGRectWidth = invalidRect.right - invalidRect.left;
 	int invalidCDGRectHeight = invalidRect.bottom - invalidRect.top;
@@ -133,11 +138,11 @@ void RenderForegroundBackBuffer(RECT* pInvalidCDGRect) {
 	if (g_bDrawOutline) {
 		// The outline is twice as thick as the scaling value (outline covers all directions)
 		::InflateRect(&outlineRect, nScaling<<1, nScaling<<1);
-		::IntersectRect(&outlineRect, &outlineRect, &bitmapRect);
+		::IntersectRect(&outlineRect, &outlineRect, &cdgRect);
 	}
 	if (g_nSmoothingPasses) {
 		::InflateRect(&invalidRect, nScaling, nScaling);
-		::IntersectRect(&invalidRect, &invalidRect, &bitmapRect);
+		::IntersectRect(&invalidRect, &invalidRect, &cdgRect);
 	}
 	invalidCDGRectWidth = invalidRect.right - invalidRect.left;
 	invalidCDGRectHeight = invalidRect.bottom - invalidRect.top;
