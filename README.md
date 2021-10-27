@@ -11,7 +11,7 @@ CDG parser and display plugin for Winamp.
 ### Installation
 Copy the two files from the [install](/install) folder to your Winamp plugins folder (usually "C:\Program Files (x86)\Winamp\Plugins")
 
-TODO
+### TODO
 
 * Prefs UI dialog (currently just an INI file).
 * Improve error handling.
