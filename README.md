@@ -1,5 +1,5 @@
 # gen_cdgPro
-CDG parser and display plugin for Winamp.
+CDG display plugin for Winamp.
 
 ![CDG Pro](/media/cdgProScreenshot.png?raw=true)
 
