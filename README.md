@@ -1,6 +1,8 @@
 # gen_cdgPro
 CDG parser and display plugin for Winamp.
 
+![CDG Pro](/cdg_pro.png?raw=true)
+
 * Transparency, to allow visualization to show through.
 * ScaleNX smoothing to de-blockify the graphics.
 * Display your own logo when no CDG file is playing.
