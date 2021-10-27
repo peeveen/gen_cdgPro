@@ -8,6 +8,9 @@ CDG parser and display plugin for Winamp.
 * Display your own logo when no CDG file is playing.
 * Various other stuff!
 
+### Installation
+Copy the two files from the [install](/install) folder to your Winamp plugins folder (usually "C:\Program Files (x86)\Winamp\Plugins")
+
 TODO
 
 * Prefs UI dialog (currently just an INI file).
