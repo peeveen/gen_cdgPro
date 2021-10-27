@@ -9,8 +9,9 @@ CDG parser and display plugin for Winamp.
 * Various other stuff!
 
 ### Installation
-* Copy the two files from the [install](/install) folder to your Winamp plugins folder (usually "C:\Program Files (x86)\Winamp\Plugins")
+* Download and extract the ZIP from the [Releases](https://github.com/peeveen/gen_cdgPro/releases) page.
 * Edit the INI file with your own preferences. Pay attention to the comments in that file.
+* Copy the two files (DLL & INI) to your Winamp plugins folder (usually "C:\Program Files (x86)\Winamp\Plugins")
 * Restart Winamp.
 * Next time you play a MP3+CDG file (zipped or otherwise), the CDGPro window should appear.
 
