@@ -2,6 +2,8 @@
 CDG display plugin for Winamp.
 
 ![CDG Pro](/media/cdgProScreenshot.png?raw=true)
+![Logo](/media/logo.gif?raw=true)
+![Lyrics](/media/lyrics.gif?raw=true)
 
 * Configurable transparency, to allow visualization (e.g. [Milkdrop](http://www.mywinamp.com/milkdrop/)) to show through.
 * Option to add non-transparent outline around foreground graphics to improve readability.
