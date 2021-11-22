@@ -106,6 +106,15 @@ void PaintForegroundBackBuffer() {
 	int nCanvasSourceY = (CDG_CANVAS_Y + g_nCanvasYOffset) * nScaling;
 	int nCanvasWidth = CDG_CANVAS_WIDTH * nScaling;
 	int nCanvasHeight = CDG_CANVAS_HEIGHT * nScaling;
+	// Blit area needs to be a little larger to accomodate the extremities of any outlines.
+	if (g_bDrawOutline) {
+		int nScalingOutlinePosDiff = nScaling << 1;
+		int nScalingOutlineSizeDiff = nScalingOutlinePosDiff << 1;
+		nCanvasSourceX -= nScalingOutlinePosDiff;
+		nCanvasSourceY -= nScalingOutlinePosDiff;
+		nCanvasWidth += nScalingOutlineSizeDiff;
+		nCanvasHeight += nScalingOutlineSizeDiff;
+	}
 	::WaitForSingleObject(g_hForegroundBackBufferDCAccessMutex, INFINITE);
 	RECT backBufferRect = { 0, 0, g_nForegroundBackBufferWidth, g_nForegroundBackBufferHeight };
 	double scaleXMultiplier = g_nForegroundBackBufferWidth / (double)CDG_CANVAS_WIDTH;
@@ -142,7 +151,10 @@ void RenderForegroundBackBuffer(RECT* pInvalidCDGRect) {
 	HDC hSourceDC = g_hScaledForegroundDCs[g_nSmoothingPasses];
 	int nScaling = 1<<g_nSmoothingPasses;
 	static RECT cdgAllRect = { 0, 0, CDG_WIDTH, CDG_HEIGHT };
-	static RECT cdgCanvasRect = { CDG_CANVAS_X, CDG_CANVAS_Y, CDG_CANVAS_X + CDG_CANVAS_WIDTH, CDG_CANVAS_Y + CDG_CANVAS_HEIGHT };
+	// Inflate the canvas rect by 1 to cover any outline. We might not be drawing
+	// an outline, but in the grand scheme of things, the time taken to blit
+	// an area a tiny bit larger will be inconsequential.
+	static RECT cdgCanvasRect = { CDG_CANVAS_X - 1, CDG_CANVAS_Y - 1, CDG_CANVAS_X + CDG_CANVAS_WIDTH + 1, CDG_CANVAS_Y + CDG_CANVAS_HEIGHT + 1 };
 	RECT cdgRect;
 	// If not performing a scrolling (offset) operation, we can limit the graphical operation to the canvas.
 	// Otherwise, need to take the normally-invisible border graphics into account.
