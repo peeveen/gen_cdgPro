@@ -28,6 +28,6 @@ This doesn't seem to be a problem in Winamp 5.666.
 * Improve error handling.
 * More comments.
 
-If you like this, and/or use it commercially, please consider throwing some coins my way via PayPal, at steven.fullhouse@gmail.com
+If you like this, and/or use it commercially, please consider throwing some coins my way via PayPal, at steven.fullhouse@gmail.com, or [buy me a coffee](https://www.buymeacoffee.com/peeveen).
 
 Thanks!
