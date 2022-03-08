@@ -25,6 +25,7 @@ This doesn't seem to be a problem in Winamp 5.666.
 ### TODO
 
 * Prefs UI dialog (currently just an INI file).
+* Realtime Scale2X/3X/4X processing, as data is written to canvas.
 * Improve error handling.
 * More comments.
 
