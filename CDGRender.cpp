@@ -16,6 +16,18 @@ int g_nCanvasXOffset = 0;
 int g_nCanvasYOffset = 0;
 
 /// <summary>
+/// We perform some post-processing on the karaoke graphics to apply a thick
+/// outline around the text. If the text is at the extremities of the canvas,
+/// our outline will go OUTSIDE the canvas. This is fine, but then we attempt
+/// to copy the rendered gfx (including the outlines) to the screen, and this
+/// can copy parts of the "unseen" canvas areas where scroll graphics reside.
+/// This can cause little bits of garbage graphics to be drawn.
+/// This controls whether we will render outlines that are outside the canvas
+/// area.
+/// </summary>
+const bool g_bRenderExtremeOutlines = false;
+
+/// <summary>
 /// Scale2X smoothing algorithm. You can find details about this online.
 /// </summary>
 /// <param name="pSourceBitmapBits">The source bitmap to smooth.</param>
@@ -109,8 +121,9 @@ void PaintForegroundBackBuffer() {
 	int nCanvasSourceY = (CDG_CANVAS_Y + g_nCanvasYOffset) * nScaling;
 	int nCanvasWidth = CDG_CANVAS_WIDTH * nScaling;
 	int nCanvasHeight = CDG_CANVAS_HEIGHT * nScaling;
-	// Blit area needs to be a little larger to accomodate the extremities of any outlines.
-	if (g_bDrawOutline) {
+	// If rendering extreme outlines, blit area needs to be a little larger
+	// to accomodate the extremities of any outlines.
+	if (g_bDrawOutline && g_bRenderExtremeOutlines) {
 		int nScalingOutlinePosDiff = nScaling << 1;
 		int nScalingOutlineSizeDiff = nScalingOutlinePosDiff << 1;
 		nCanvasSourceX -= nScalingOutlinePosDiff;
@@ -160,11 +173,13 @@ void RenderForegroundBackBuffer(RECT* pInvalidCDGRect) {
 	// Inflate the canvas rect by 1 to cover any outline. We might not be drawing
 	// an outline, but in the grand scheme of things, the time taken to blit
 	// an area a tiny bit larger will be inconsequential.
-	static RECT cdgCanvasRect = { CDG_CANVAS_X - 1, CDG_CANVAS_Y - 1, CDG_CANVAS_X + CDG_CANVAS_WIDTH + 1, CDG_CANVAS_Y + CDG_CANVAS_HEIGHT + 1 };
+	int nOffset = g_bRenderExtremeOutlines ? 1 : 0;
+	static RECT cdgCanvasRect = { CDG_CANVAS_X - nOffset, CDG_CANVAS_Y - nOffset, CDG_CANVAS_X + CDG_CANVAS_WIDTH + nOffset, CDG_CANVAS_Y + CDG_CANVAS_HEIGHT + nOffset };
 	RECT cdgRect;
 	// If not performing a scrolling (offset) operation, we can limit the graphical operation to the canvas.
 	// Otherwise, need to take the normally-invisible border graphics into account.
-	memcpy(&cdgRect, (g_nCanvasXOffset == 0 && g_nCanvasYOffset == 0 ? &cdgCanvasRect : &cdgAllRect), sizeof(RECT));
+	bool bNotScrolling = g_nCanvasXOffset == 0 && g_nCanvasYOffset == 0;
+	memcpy(&cdgRect, (bNotScrolling ? &cdgCanvasRect : &cdgAllRect), sizeof(RECT));
 	if (pInvalidCDGRect)
 		memcpy(&invalidRect, pInvalidCDGRect, sizeof(RECT));
 	else
