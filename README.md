@@ -28,6 +28,7 @@ This doesn't seem to be a problem in Winamp 5.666.
 * Realtime Scale2X/3X/4X processing, as data is written to canvas.
 * Improve error handling.
 * More comments.
+* Fix small one-pixel line of garbage during some scroll operations.
 
 If you like this, and/or use it commercially, please consider throwing some coins my way via PayPal, at steven.fullhouse@gmail.com, or [buy me a coffee](https://www.buymeacoffee.com/peeveen).
 
