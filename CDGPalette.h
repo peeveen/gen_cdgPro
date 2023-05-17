@@ -20,3 +20,9 @@ void SetPalette(RGBQUAD* pRGBQuads, int nStartIndex, int nCount);
 /// The current CDG palette.
 /// </summary>
 extern RGBQUAD g_palette[16];
+
+/// <summary>
+/// Creates a brush of the background colour.
+/// </summary>
+/// <returns>Brush</returns>
+extern HBRUSH CreateBackgroundBrush();

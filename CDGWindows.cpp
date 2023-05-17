@@ -70,7 +70,7 @@ void CDGRectToClientRect(RECT* pRect) {
 /// The logo position changes when the window resizes.
 /// </summary>
 void UpdateLogoPosition() {
-	::SetWindowPos(g_hForegroundWindow, g_hLogoWindow, 0, 0,0,0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+	::SetWindowPos(g_hForegroundWindow, g_hLogoWindow, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
 	static RECT foregroundClientRect,foregroundWindowRect;
 	::GetClientRect(g_hForegroundWindow, &foregroundClientRect);
 	::GetWindowRect(g_hForegroundWindow, &foregroundWindowRect);
@@ -99,7 +99,7 @@ void UpdateLogoPosition() {
 	::UpdateLayeredWindow(g_hLogoWindow, g_hScreenDC, &topLeft, &logoSize, g_hLogoDC, &logoSourcePoint, 0, &g_blendFn, ULW_ALPHA);
 }
 
-void ShowWindows(bool bSongPlaying) {
+void ShowWindows(bool bSongPlaying, bool updateLogo = false) {
 	// If a song is playing, then show all windows EXCEPT the logo window.
 	// If a song is NOT playing, then:
 	//		If there is a logo, show all windows.
@@ -113,8 +113,10 @@ void ShowWindows(bool bSongPlaying) {
 		exStyle &= ~WS_EX_NOACTIVATE;
 		::SetWindowLong(g_hForegroundWindow, GWL_EXSTYLE, exStyle);
 		// Now show the windows we want.
-		::ShowWindow(g_hLogoWindow, SW_HIDE);
-		::ShowWindow(g_hBackgroundWindow, SW_SHOW);
+		if (g_bUseLayeredWindows) {
+			::ShowWindow(g_hLogoWindow, SW_HIDE);
+			::ShowWindow(g_hBackgroundWindow, SW_SHOW);
+		}
 		::ShowWindow(g_hForegroundWindow, SW_SHOW);
 	}
 	else {
@@ -126,16 +128,22 @@ void ShowWindows(bool bSongPlaying) {
 			exStyle &= ~WS_EX_APPWINDOW;
 			exStyle |= WS_EX_NOACTIVATE;
 			::SetWindowLong(g_hForegroundWindow, GWL_EXSTYLE, exStyle);
-			::ShowWindow(g_hBackgroundWindow, SW_SHOW);
+			if (g_bUseLayeredWindows)
+				::ShowWindow(g_hBackgroundWindow, SW_SHOW);
 			::ShowWindow(g_hForegroundWindow, SW_SHOW);
-			::ShowWindow(g_hLogoWindow, SW_SHOW);
+			if (g_bUseLayeredWindows)
+				::ShowWindow(g_hLogoWindow, SW_SHOW);
 		}
 		else {
-			::ShowWindow(g_hLogoWindow, SW_HIDE);
+			if (g_bUseLayeredWindows)
+				::ShowWindow(g_hLogoWindow, SW_HIDE);
 			::ShowWindow(g_hForegroundWindow, SW_HIDE);
-			::ShowWindow(g_hBackgroundWindow, SW_HIDE);
+			if (g_bUseLayeredWindows)
+				::ShowWindow(g_hBackgroundWindow, SW_HIDE);
 		}
 	}
+	if(updateLogo && g_bUseLayeredWindows)
+		::UpdateLogoPosition();
 }
 
 bool IsFullScreen() {
@@ -195,10 +203,12 @@ LRESULT CALLBACK ForegroundWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARA
 				break;
 		// If a window changes moves, activates, deactivates, or changes z-order, the others have to follow suit!
 		case WM_WINDOWPOSCHANGED:
-			::SetWindowPos(g_hBackgroundWindow, hwnd, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-			::SetWindowPos(g_hLogoWindow,NULL, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE|SWP_NOACTIVATE);
-			::SetWindowPos(hwnd, g_hLogoWindow, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
-			UpdateLogoPosition();
+			if (g_bUseLayeredWindows) {
+				::SetWindowPos(g_hBackgroundWindow, hwnd, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+				::SetWindowPos(g_hLogoWindow, NULL, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+				::SetWindowPos(hwnd, g_hLogoWindow, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+				UpdateLogoPosition();
+			}
 			break;
 		// Right-mouse button click ... show the menu!
 		case WM_NCRBUTTONUP: {
@@ -209,22 +219,27 @@ LRESULT CALLBACK ForegroundWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARA
 		}
 		// If a window moves, the others have to move too!
 		case WM_MOVE: {
-			int x = (int)(short)LOWORD(lParam);
-			int y = (int)(short)HIWORD(lParam);
-			::SetWindowPos(g_hBackgroundWindow, hwnd, x, y, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE);
-			UpdateLogoPosition();
+			if (g_bUseLayeredWindows) {
+				int x = (int)(short)LOWORD(lParam);
+				int y = (int)(short)HIWORD(lParam);
+				::SetWindowPos(g_hBackgroundWindow, hwnd, x, y, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE);
+				UpdateLogoPosition();
+			}
 			break;
 		}
 		// If a window changes size, the others have to change too!
 		case WM_SIZE: {
-			int w = (int)(short)LOWORD(lParam);
-			int h = (int)(short)HIWORD(lParam);
-			::SetWindowPos(g_hBackgroundWindow, hwnd, 0, 0, w, h, SWP_NOMOVE | SWP_NOACTIVATE);
+			if (g_bUseLayeredWindows) {
+				int w = (int)(short)LOWORD(lParam);
+				int h = (int)(short)HIWORD(lParam);
+				::SetWindowPos(g_hBackgroundWindow, hwnd, 0, 0, w, h, SWP_NOMOVE | SWP_NOACTIVATE);
+			}
 			if (g_hForegroundBackBufferDC) {
 				ResizeForegroundBackBufferBitmap();
 				PaintForegroundBackBuffer();
 			}
-			UpdateLogoPosition();
+			if (g_bUseLayeredWindows)
+				UpdateLogoPosition();
 			break;
 		}
 		// Do not allow the user to manually close this window. It will close when Winamp closes,
@@ -334,7 +349,7 @@ bool CreateCDGWindow(HWND* phWnd, HDC* phDC, const WCHAR* pszClassName, DWORD st
 	int width = CDG_CANVAS_WIDTH + (g_nMargin << 1);
 	int height = CDG_CANVAS_HEIGHT + (g_nMargin << 1);
 	*phWnd = CreateWindowEx(
-		WS_EX_LAYERED | additionalExStyles,
+		(g_bUseLayeredWindows ? WS_EX_LAYERED : 0 ) | additionalExStyles,
 		pszClassName,
 		g_pszWindowCaption,
 		styles,
@@ -379,22 +394,26 @@ bool CreateLogoWindow() {
 
 void UnregisterWindowClasses() {
 	::UnregisterClass(g_foregroundWindowClassName, g_hInstance);
-	::UnregisterClass(g_backgroundWindowClassName, g_hInstance);
-	::UnregisterClass(g_logoWindowClassName, g_hInstance);
+	if (g_bUseLayeredWindows) {
+		::UnregisterClass(g_backgroundWindowClassName, g_hInstance);
+		::UnregisterClass(g_logoWindowClassName, g_hInstance);
+	}
 	if (g_hIcon)
 		::DeleteObject(g_hIcon);
 }
 
 bool CreateWindows() {
-	if (RegisterBackgroundWindowClass() &&
+	if ((!g_bUseLayeredWindows || RegisterBackgroundWindowClass()) &&
 		RegisterForegroundWindowClass() &&
-		RegisterLogoWindowClass() &&
-		CreateLogoWindow() &&
-		CreateBackgroundWindow() &&
+		(!g_bUseLayeredWindows || RegisterLogoWindowClass()) &&
+		(!g_bUseLayeredWindows || CreateLogoWindow()) &&
+		(!g_bUseLayeredWindows || CreateBackgroundWindow()) &&
 		CreateForegroundWindow()) {
 		::SetStretchBltMode(g_hForegroundWindowDC, COLORONCOLOR);
-		::SetLayeredWindowAttributes(g_hForegroundWindow, DEFAULT_TRANSPARENT_COLORREF, 255, LWA_COLORKEY);
-		::SetLayeredWindowAttributes(g_hBackgroundWindow, 0, g_nBackgroundOpacity, LWA_ALPHA);
+		if (g_bUseLayeredWindows) {
+			::SetLayeredWindowAttributes(g_hForegroundWindow, DEFAULT_TRANSPARENT_COLORREF, 255, LWA_COLORKEY);
+			::SetLayeredWindowAttributes(g_hBackgroundWindow, 0, g_nBackgroundOpacity, LWA_ALPHA);
+		}
 		return true;
 	}
 	return false;
@@ -411,7 +430,9 @@ void CloseWindow(HWND hWnd, HDC hDC) {
 
 void DestroyWindows() {
 	CloseWindow(g_hForegroundWindow, g_hForegroundWindowDC);
-	CloseWindow(g_hBackgroundWindow, g_hBackgroundWindowDC);
-	CloseWindow(g_hLogoWindow, g_hLogoWindowDC);
+	if (g_bUseLayeredWindows) {
+		CloseWindow(g_hBackgroundWindow, g_hBackgroundWindowDC);
+		CloseWindow(g_hLogoWindow, g_hLogoWindowDC);
+	}
 	UnregisterWindowClasses();
 }

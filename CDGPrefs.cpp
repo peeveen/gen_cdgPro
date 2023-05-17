@@ -9,6 +9,8 @@
 WCHAR g_szINIPath[MAX_PATH + 1] = { '\0' };
 // How opaque should the window be?
 int g_nBackgroundOpacity = 192;
+// False to use only standard GDI.
+bool g_bUseLayeredWindows = true;
 // Draw an outline around the foreground graphics for increased visibility?
 bool g_bDrawOutline = true;
 // We periodically ask WinAmp how many milliseconds it has played of a song. This works fine
@@ -108,6 +110,10 @@ void SetMargin(WCHAR* pszPrefLine) {
 	SetInt(pszPrefLine, L"margin", &g_nMargin, 0, 50);
 }
 
+void SetUseLayeredWindows(WCHAR* pszPrefLine) {
+	SetBool(pszPrefLine, L"uselayeredwindows", &g_bUseLayeredWindows);
+}
+
 void SetOutline(WCHAR* pszPrefLine) {
 	SetBool(pszPrefLine, L"outline", &g_bDrawOutline);
 }
@@ -146,6 +152,7 @@ bool ReadPrefs() {
 				SetBackgroundColor(szBuffer);
 				SetBackgroundDetectionMode(szBuffer);
 				SetSmoothingPasses(szBuffer);
+				SetUseLayeredWindows(szBuffer);
 				SetMargin(szBuffer);
 				SetOutline(szBuffer);
 				SetLogoPath(szBuffer);

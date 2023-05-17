@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "CDGGlobals.h"
 #include "CDGPrefs.h"
+#include "CDGPalette.h"
 #include "CDGWindows.h"
 #include "CDGBitmaps.h"
 #include "CDGProcessor.h"
@@ -93,8 +94,10 @@ void Perform2xSmoothing(BYTE* pSourceBitmapBits, BYTE* pDestinationBitmapBits, R
 /// </summary>
 void DrawBackground() {
 	RECT r;
-	::GetClientRect(g_hBackgroundWindow, &r);
-	::StretchBlt(g_hBackgroundWindowDC, 0, 0, r.right - r.left, r.bottom - r.top, g_hBackgroundDC, 0, 0, 1, 1, SRCCOPY);
+	HWND hWnd = g_bUseLayeredWindows ? g_hBackgroundWindow : g_hForegroundWindow;
+	HDC hDC = g_bUseLayeredWindows ? g_hBackgroundWindowDC : g_hForegroundWindowDC;
+	::GetClientRect(hWnd, &r);
+	::StretchBlt(hDC, 0, 0, r.right - r.left, r.bottom - r.top, g_hBackgroundDC, 0, 0, 1, 1, SRCCOPY);
 }
 
 /// <summary>
@@ -121,7 +124,10 @@ void PaintForegroundBackBuffer() {
 	double scaleYMultiplier = g_nForegroundBackBufferHeight / (double)CDG_CANVAS_HEIGHT;
 	int nScaledXMargin = (int)(g_nMargin * scaleXMultiplier);
 	int nScaledYMargin = (int)(g_nMargin * scaleYMultiplier);
-	::FillRect(g_hForegroundBackBufferDC, &backBufferRect, g_hTransparentBrush);
+	HBRUSH hBrush = g_bUseLayeredWindows ? g_hTransparentBrush : CreateBackgroundBrush();
+	::FillRect(g_hForegroundBackBufferDC, &backBufferRect, hBrush);
+	if (!g_bUseLayeredWindows)
+		::DeleteObject(hBrush);
 	::InflateRect(&backBufferRect, -nScaledXMargin, -nScaledYMargin);
 	::WaitForSingleObject(g_hMaskedForegroundDCAccessMutex, INFINITE);
 	::StretchBlt(g_hForegroundBackBufferDC, backBufferRect.left, backBufferRect.top, backBufferRect.right - backBufferRect.left, backBufferRect.bottom - backBufferRect.top, g_hMaskedForegroundDC, nCanvasSourceX, nCanvasSourceY, nCanvasWidth, nCanvasHeight, SRCCOPY);
@@ -186,7 +192,8 @@ void RenderForegroundBackBuffer(RECT* pInvalidCDGRect) {
 	}
 	if (g_nSmoothingPasses) {
 		::InflateRect(&invalidRect, nScaling, nScaling);
-		::IntersectRect(&invalidRect, &invalidRect, &cdgRect);
+		if (g_bUseLayeredWindows)
+			::IntersectRect(&invalidRect, &invalidRect, &cdgRect);
 	}
 	invalidCDGRectWidth = invalidRect.right - invalidRect.left;
 	invalidCDGRectHeight = invalidRect.bottom - invalidRect.top;
@@ -201,7 +208,10 @@ void RenderForegroundBackBuffer(RECT* pInvalidCDGRect) {
 	// Now blit the foreground bitmap to the masked foreground bitmap, using the border mask bitmap as a mask.
 	// Only bits from the foreground bitmap that "get through" the mask will make it to the masked foreground bitmap,
 	// leaving transparency everywhere else.
-	::MaskBlt(g_hMaskedForegroundDC, invalidRect.left, invalidRect.top, invalidCDGRectWidth, invalidCDGRectHeight, hSourceDC, invalidRect.left, invalidRect.top, g_hBorderMaskBitmap, invalidRect.left, invalidRect.top, MAKEROP4(SRCCOPY, PATCOPY));
+	if (g_bUseLayeredWindows)
+		::MaskBlt(g_hMaskedForegroundDC, invalidRect.left, invalidRect.top, invalidCDGRectWidth, invalidCDGRectHeight, hSourceDC, invalidRect.left, invalidRect.top, g_hBorderMaskBitmap, invalidRect.left, invalidRect.top, MAKEROP4(SRCCOPY, PATCOPY));
+	else 
+		::BitBlt(g_hMaskedForegroundDC, invalidRect.left, invalidRect.top, invalidCDGRectWidth, invalidCDGRectHeight, hSourceDC, invalidRect.left, invalidRect.top, SRCCOPY);
 	::ReleaseMutex(g_hMaskedForegroundDCAccessMutex);
 	PaintForegroundBackBuffer();
 }

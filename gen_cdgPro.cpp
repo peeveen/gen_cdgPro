@@ -118,7 +118,7 @@ int init() {
 	CreateBitmaps();
 	StartCDGProcessor();
 
-	ShowWindows(false);
+	ShowWindows(false, !g_bUseLayeredWindows);
 
 	return 0;
 }

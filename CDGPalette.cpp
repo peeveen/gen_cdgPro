@@ -63,3 +63,7 @@ void ResetPalette() {
 	emptyPalette[0].rgbRed = (g_nDefaultBackgroundColor >> 16) & 0x00ff;
 	SetPalette(emptyPalette, 0, 16);
 }
+
+HBRUSH CreateBackgroundBrush() {
+	return ::CreateSolidBrush(RGB(g_palette[0].rgbRed, g_palette[0].rgbGreen, g_palette[0].rgbBlue));
+}
