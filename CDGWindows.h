@@ -34,7 +34,8 @@ bool IsFullScreen();
 ///	  If there is NOT a logo, hide all windows.
 /// </summary>
 /// <param name="bSongPlaying">True if a song is playing.</param>
-void ShowWindows(bool bSongPlaying);
+/// <param name="updateLogo">True to update the logo.</param>
+void ShowWindows(bool bSongPlaying, bool updateLogo = false);
 
 /// <summary>
 /// Convert the given CDG coordinates to onscreen window coordinates.

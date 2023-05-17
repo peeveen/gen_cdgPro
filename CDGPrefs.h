@@ -63,3 +63,8 @@ extern bool g_bDoubleBuffered;
 /// Path to logo file (if specified).
 /// </summary>
 extern WCHAR g_szLogoPath[];
+
+/// <summary>
+/// If true, we will use layered windows and alpha blending, etc.
+/// </summary>
+extern bool g_bUseLayeredWindows;

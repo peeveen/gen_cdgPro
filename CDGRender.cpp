@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "CDGGlobals.h"
 #include "CDGPrefs.h"
+#include "CDGPalette.h"
 #include "CDGWindows.h"
 #include "CDGBitmaps.h"
 #include "CDGProcessor.h"
@@ -13,6 +14,18 @@ using namespace Gdiplus;
 // Canvas pixel offsets for scrolling
 int g_nCanvasXOffset = 0;
 int g_nCanvasYOffset = 0;
+
+/// <summary>
+/// We perform some post-processing on the karaoke graphics to apply a thick
+/// outline around the text. If the text is at the extremities of the canvas,
+/// our outline will go OUTSIDE the canvas. This is fine, but then we attempt
+/// to copy the rendered gfx (including the outlines) to the screen, and this
+/// can copy parts of the "unseen" canvas areas where scroll graphics reside.
+/// This can cause little bits of garbage graphics to be drawn.
+/// This controls whether we will render outlines that are outside the canvas
+/// area.
+/// </summary>
+const bool g_bRenderExtremeOutlines = false;
 
 /// <summary>
 /// Scale2X smoothing algorithm. You can find details about this online.
@@ -93,8 +106,10 @@ void Perform2xSmoothing(BYTE* pSourceBitmapBits, BYTE* pDestinationBitmapBits, R
 /// </summary>
 void DrawBackground() {
 	RECT r;
-	::GetClientRect(g_hBackgroundWindow, &r);
-	::StretchBlt(g_hBackgroundWindowDC, 0, 0, r.right - r.left, r.bottom - r.top, g_hBackgroundDC, 0, 0, 1, 1, SRCCOPY);
+	HWND hWnd = g_bUseLayeredWindows ? g_hBackgroundWindow : g_hForegroundWindow;
+	HDC hDC = g_bUseLayeredWindows ? g_hBackgroundWindowDC : g_hForegroundWindowDC;
+	::GetClientRect(hWnd, &r);
+	::StretchBlt(hDC, 0, 0, r.right - r.left, r.bottom - r.top, g_hBackgroundDC, 0, 0, 1, 1, SRCCOPY);
 }
 
 /// <summary>
@@ -106,8 +121,9 @@ void PaintForegroundBackBuffer() {
 	int nCanvasSourceY = (CDG_CANVAS_Y + g_nCanvasYOffset) * nScaling;
 	int nCanvasWidth = CDG_CANVAS_WIDTH * nScaling;
 	int nCanvasHeight = CDG_CANVAS_HEIGHT * nScaling;
-	// Blit area needs to be a little larger to accomodate the extremities of any outlines.
-	if (g_bDrawOutline) {
+	// If rendering extreme outlines, blit area needs to be a little larger
+	// to accomodate the extremities of any outlines.
+	if (g_bDrawOutline && g_bRenderExtremeOutlines) {
 		int nScalingOutlinePosDiff = nScaling << 1;
 		int nScalingOutlineSizeDiff = nScalingOutlinePosDiff << 1;
 		nCanvasSourceX -= nScalingOutlinePosDiff;
@@ -121,7 +137,10 @@ void PaintForegroundBackBuffer() {
 	double scaleYMultiplier = g_nForegroundBackBufferHeight / (double)CDG_CANVAS_HEIGHT;
 	int nScaledXMargin = (int)(g_nMargin * scaleXMultiplier);
 	int nScaledYMargin = (int)(g_nMargin * scaleYMultiplier);
-	::FillRect(g_hForegroundBackBufferDC, &backBufferRect, g_hTransparentBrush);
+	HBRUSH hBrush = g_bUseLayeredWindows ? g_hTransparentBrush : CreateBackgroundBrush();
+	::FillRect(g_hForegroundBackBufferDC, &backBufferRect, hBrush);
+	if (!g_bUseLayeredWindows)
+		::DeleteObject(hBrush);
 	::InflateRect(&backBufferRect, -nScaledXMargin, -nScaledYMargin);
 	::WaitForSingleObject(g_hMaskedForegroundDCAccessMutex, INFINITE);
 	::StretchBlt(g_hForegroundBackBufferDC, backBufferRect.left, backBufferRect.top, backBufferRect.right - backBufferRect.left, backBufferRect.bottom - backBufferRect.top, g_hMaskedForegroundDC, nCanvasSourceX, nCanvasSourceY, nCanvasWidth, nCanvasHeight, SRCCOPY);
@@ -154,11 +173,13 @@ void RenderForegroundBackBuffer(RECT* pInvalidCDGRect) {
 	// Inflate the canvas rect by 1 to cover any outline. We might not be drawing
 	// an outline, but in the grand scheme of things, the time taken to blit
 	// an area a tiny bit larger will be inconsequential.
-	static RECT cdgCanvasRect = { CDG_CANVAS_X - 1, CDG_CANVAS_Y - 1, CDG_CANVAS_X + CDG_CANVAS_WIDTH + 1, CDG_CANVAS_Y + CDG_CANVAS_HEIGHT + 1 };
+	int nOffset = g_bRenderExtremeOutlines ? 1 : 0;
+	static RECT cdgCanvasRect = { CDG_CANVAS_X - nOffset, CDG_CANVAS_Y - nOffset, CDG_CANVAS_X + CDG_CANVAS_WIDTH + nOffset, CDG_CANVAS_Y + CDG_CANVAS_HEIGHT + nOffset };
 	RECT cdgRect;
 	// If not performing a scrolling (offset) operation, we can limit the graphical operation to the canvas.
 	// Otherwise, need to take the normally-invisible border graphics into account.
-	memcpy(&cdgRect, (g_nCanvasXOffset == 0 && g_nCanvasYOffset == 0 ? &cdgCanvasRect : &cdgAllRect), sizeof(RECT));
+	bool bNotScrolling = g_nCanvasXOffset == 0 && g_nCanvasYOffset == 0;
+	memcpy(&cdgRect, (bNotScrolling ? &cdgCanvasRect : &cdgAllRect), sizeof(RECT));
 	if (pInvalidCDGRect)
 		memcpy(&invalidRect, pInvalidCDGRect, sizeof(RECT));
 	else
@@ -186,7 +207,8 @@ void RenderForegroundBackBuffer(RECT* pInvalidCDGRect) {
 	}
 	if (g_nSmoothingPasses) {
 		::InflateRect(&invalidRect, nScaling, nScaling);
-		::IntersectRect(&invalidRect, &invalidRect, &cdgRect);
+		if (g_bUseLayeredWindows)
+			::IntersectRect(&invalidRect, &invalidRect, &cdgRect);
 	}
 	invalidCDGRectWidth = invalidRect.right - invalidRect.left;
 	invalidCDGRectHeight = invalidRect.bottom - invalidRect.top;
@@ -201,7 +223,10 @@ void RenderForegroundBackBuffer(RECT* pInvalidCDGRect) {
 	// Now blit the foreground bitmap to the masked foreground bitmap, using the border mask bitmap as a mask.
 	// Only bits from the foreground bitmap that "get through" the mask will make it to the masked foreground bitmap,
 	// leaving transparency everywhere else.
-	::MaskBlt(g_hMaskedForegroundDC, invalidRect.left, invalidRect.top, invalidCDGRectWidth, invalidCDGRectHeight, hSourceDC, invalidRect.left, invalidRect.top, g_hBorderMaskBitmap, invalidRect.left, invalidRect.top, MAKEROP4(SRCCOPY, PATCOPY));
+	if (g_bUseLayeredWindows)
+		::MaskBlt(g_hMaskedForegroundDC, invalidRect.left, invalidRect.top, invalidCDGRectWidth, invalidCDGRectHeight, hSourceDC, invalidRect.left, invalidRect.top, g_hBorderMaskBitmap, invalidRect.left, invalidRect.top, MAKEROP4(SRCCOPY, PATCOPY));
+	else 
+		::BitBlt(g_hMaskedForegroundDC, invalidRect.left, invalidRect.top, invalidCDGRectWidth, invalidCDGRectHeight, hSourceDC, invalidRect.left, invalidRect.top, SRCCOPY);
 	::ReleaseMutex(g_hMaskedForegroundDCAccessMutex);
 	PaintForegroundBackBuffer();
 }

@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "CDGWindows.h"
 #include "CDGPrefs.h"
+#include "CDGPalette.h"
 #include <objidl.h>
 #include <stdlib.h>
 #include <gdiplus.h>
@@ -239,10 +240,13 @@ bool CreateBackgroundDC() {
 /// </summary>
 void ClearForegroundBuffer() {
 	RECT r = { 0,0,CDG_MAXIMUM_BITMAP_WIDTH, CDG_MAXIMUM_BITMAP_HEIGHT };
-	::FillRect(g_hMaskedForegroundDC, &r, g_hTransparentBrush);
+	HBRUSH hBrush = g_bUseLayeredWindows ? g_hTransparentBrush : CreateBackgroundBrush();
+	::FillRect(g_hMaskedForegroundDC, &r, hBrush);
 	::GetClientRect(g_hForegroundWindow, &r);
 	::WaitForSingleObject(g_hForegroundBackBufferDCAccessMutex, INFINITE);
-	::FillRect(g_hForegroundBackBufferDC, &r, g_hTransparentBrush);
+	::FillRect(g_hForegroundBackBufferDC, &r, hBrush);
+	if (!g_bUseLayeredWindows)
+		::DeleteObject(hBrush);
 	::ReleaseMutex(g_hForegroundBackBufferDCAccessMutex);
 }
 

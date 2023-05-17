@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include <windowsx.h>
 #include "CDGGlobals.h"
+#include "CDGPrefs.h"
 #include "CDGInstructionHandlers.h"
 #include "CDGWindows.h"
 #include "resource.h"
@@ -26,10 +27,11 @@ void SetMenuItemCheckmark(UINT nMenuItemID, bool set) {
 /// Set the window style at topmost or not.
 /// </summary>
 void ToggleTopmost() {
-	DWORD currentExStyle = ::GetWindowLong(g_hLogoWindow, GWL_EXSTYLE);
+	HWND hWnd = g_bUseLayeredWindows ? g_hLogoWindow : g_hForegroundWindow;
+	DWORD currentExStyle = ::GetWindowLong(hWnd, GWL_EXSTYLE);
 	bool currentlyTopmost = !!(currentExStyle & WS_EX_TOPMOST);
-	::SetWindowLong(g_hLogoWindow, GWL_EXSTYLE, currentExStyle ^ WS_EX_TOPMOST);
-	::SetWindowPos(g_hLogoWindow, currentlyTopmost ? HWND_NOTOPMOST : HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+	::SetWindowLong(hWnd, GWL_EXSTYLE, currentExStyle ^ WS_EX_TOPMOST);
+	::SetWindowPos(hWnd, currentlyTopmost ? HWND_NOTOPMOST : HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
 	SetMenuItemCheckmark(MENUITEM_TOPMOST_ID, !currentlyTopmost);
 }
 
@@ -76,9 +78,10 @@ INT_PTR AboutDialogProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 /// </summary>
 void ShowAboutDialog() {
 	// Remove topmost attributes, otherwise the user will never see the about dialog.
-	DWORD currentExStyle = ::GetWindowLong(g_hLogoWindow, GWL_EXSTYLE);
+	HWND hWnd = g_bUseLayeredWindows ? g_hLogoWindow : g_hForegroundWindow;
+	DWORD currentExStyle = ::GetWindowLong(hWnd, GWL_EXSTYLE);
 	g_bDialogSetsTopmost = !!(currentExStyle & WS_EX_TOPMOST);
-	::DialogBox(g_hInstance, MAKEINTRESOURCE(IDD_ABOUTDIALOG), g_hLogoWindow, (DLGPROC)AboutDialogProc);
+	::DialogBox(g_hInstance, MAKEINTRESOURCE(IDD_ABOUTDIALOG), hWnd, (DLGPROC)AboutDialogProc);
 }
 
 /// <summary>
